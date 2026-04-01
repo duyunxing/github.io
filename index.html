@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>智能科研辅助系统 | 学术创新引擎</title>
+    <!-- Google Fonts & Font Awesome 6 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f5f7fc;
+            color: #1e2a3e;
+            line-height: 1.5;
+            scroll-behavior: smooth;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 3rem;
+        }
+
+        .hero {
+            text-align: center;
+            margin-bottom: 3.5rem;
+            position: relative;
+        }
+        .hero h1 {
+            font-size: 2.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #1e3c72 0%, #2b4c7c 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.75rem;
+        }
+        .hero .sub {
+            font-size: 1.2rem;
+            color: #4a627a;
+            font-weight: 400;
+            border-bottom: 1px solid #e2e8f0;
+            display: inline-block;
+            padding-bottom: 0.5rem;
+        }
+        .hero-badge {
+            display: inline-block;
+            background: #eef2ff;
+            color: #1e4a76;
+            font-size: 0.85rem;
+            padding: 0.25rem 1rem;
+            border-radius: 30px;
+            margin-top: 1rem;
+            font-weight: 500;
+        }
+
+        .functions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-bottom: 4rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+            transition: transform 0.25s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(203, 213, 225, 0.4);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 25px 30px -12px rgba(0, 0, 0, 0.12);
+            border-color: #cbdff2;
+        }
+        .card-link {
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            cursor: pointer;
+        }
+        .card-content {
+            padding: 1.8rem 1.6rem 2rem;
+            flex: 1;
+        }
+        .card-icon {
+            font-size: 2.6rem;
+            color: #2c6280;
+            margin-bottom: 1.2rem;
+        }
+        .card h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: #0f2b3d;
+            letter-spacing: -0.3px;
+        }
+        .card p {
+            color: #4a5568;
+            line-height: 1.5;
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+        .card-footer {
+            margin-top: auto;
+            padding: 0 1.6rem 1.6rem;
+            font-size: 0.85rem;
+            color: #2c6280;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-top: 1px solid #edf2f7;
+            padding-top: 1rem;
+        }
+        .card-footer i {
+            font-size: 0.8rem;
+            transition: transform 0.2s;
+        }
+        .card-link:hover .card-footer i {
+            transform: translateX(4px);
+        }
+
+        .coming-soon {
+            background: #f8fafc;
+            opacity: 0.9;
+            cursor: default;
+        }
+        .coming-soon .card-icon {
+            color: #94a3b8;
+        }
+        .coming-soon h3 {
+            color: #334155;
+        }
+        .badge-soon {
+            background: #e2e8f0;
+            color: #475569;
+            padding: 0.2rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+
+        .info-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            margin-top: 1rem;
+            margin-bottom: 2rem;
+            background: #ffffff;
+            border-radius: 1.5rem;
+            padding: 1.8rem 2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+            border: 1px solid #eef2f8;
+        }
+        .disclaimer {
+            flex: 1.5;
+            border-right: 1px solid #e9edf2;
+            padding-right: 1.8rem;
+        }
+        .donation {
+            flex: 1;
+            text-align: center;
+        }
+        .disclaimer h4, .donation h4 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+            color: #1e3a5f;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .disclaimer p {
+            font-size: 0.85rem;
+            color: #2c3e4e;
+            line-height: 1.55;
+            text-align: justify;
+            margin-bottom: 0.75rem;
+        }
+        .disclaimer .email-link {
+            color: #2c6280;
+            font-weight: 600;
+            text-decoration: none;
+            border-bottom: 1px dashed #b9d0e7;
+        }
+        .disclaimer .email-link:hover {
+            color: #0f4c6b;
+        }
+        .donation p {
+            font-size: 0.9rem;
+            color: #2d4a6e;
+            margin-bottom: 1rem;
+        }
+        .wechat-qr {
+            background: #fef9e8;
+            border-radius: 1rem;
+            padding: 1rem;
+            display: inline-block;
+            transition: all 0.2s;
+            border: 1px solid #ffe2b5;
+            box-shadow: 0 6px 12px -6px rgba(0,0,0,0.05);
+        }
+        .qr-placeholder {
+            width: 160px;
+            height: 160px;
+            background: #ffffff;
+            border-radius: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+            box-shadow: inset 0 0 0 1px #e9eef3, 0 4px 8px rgba(0,0,0,0.02);
+        }
+        .mock-qr {
+            width: 120px;
+            height: 120px;
+            background: repeating-linear-gradient(45deg, #2c5a2e 0px, #2c5a2e 8px, #f0f0f0 8px, #f0f0f0 16px);
+            border-radius: 12px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .mock-qr i {
+            font-size: 2.5rem;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            border-radius: 50%;
+            padding: 10px;
+        }
+        .qr-caption {
+            font-size: 0.7rem;
+            color: #7f8c8d;
+            margin-top: 8px;
+            font-weight: 500;
+        }
+        .donation button {
+            background: #eef2ff;
+            border: none;
+            padding: 0.4rem 1rem;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            color: #1e4a76;
+            margin-top: 0.5rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .donation button:hover {
+            background: #e2eafc;
+        }
+        .donation-note {
+            font-size: 0.7rem;
+            color: #8196aa;
+            margin-top: 0.6rem;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 2.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e2edf7;
+            font-size: 0.75rem;
+            color: #6c86a3;
+        }
+        @media (max-width: 800px) {
+            .container {
+                padding: 1.5rem 1rem;
+            }
+            .hero h1 {
+                font-size: 2rem;
+            }
+            .info-row {
+                flex-direction: column;
+                padding: 1.5rem;
+            }
+            .disclaimer {
+                border-right: none;
+                padding-right: 0;
+                border-bottom: 1px solid #eef2f8;
+                padding-bottom: 1.2rem;
+            }
+            .card h3 {
+                font-size: 1.3rem;
+            }
+        }
+        @media (max-width: 480px) {
+            .functions-grid {
+                gap: 1.2rem;
+            }
+        }
+        .highlight-text {
+            color: #2c6280;
+            font-weight: 500;
+        }
+        .feedback-icon {
+            margin-top: 0.2rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="hero">
+        <h1>🧠 智能科研辅助系统</h1>
+        <div class="sub">Intelligent Research Assistant · 赋能学术创新</div>
+        <div class="hero-badge">
+            <i class="fas fa-microchip"></i>  AI驱动 · 高效严谨 · 免费开放
+        </div>
+    </div>
+
+    <!-- 四大核心功能 + 扩展预留卡片 -->
+    <div class="functions-grid">
+        <div class="card">
+            <a href="academic_intro.html" class="card-link" target="_self">
+                <div class="card-content">
+                    <div class="card-icon"><i class="fas fa-pen-fancy"></i></div>
+                    <h3>学术论文引言智能写作系统</h3>
+                    <p>基于深度语义理解，自动生成符合学术规范的引言段落，提炼研究背景、问题与创新点，大幅提升写作效率。</p>
+                </div>
+                <div class="card-footer">
+                    <span>启动系统</span>
+                    <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+        </div>
+
+        <div class="card">
+            <a href="review_paper.html" class="card-link" target="_self">
+                <div class="card-content">
+                    <div class="card-icon"><i class="fas fa-book-open"></i></div>
+                    <h3>综述论文辅助系统</h3>
+                    <p>智能梳理领域文献脉络，自动归纳研究趋势、争议焦点，辅助构建逻辑严谨的文献综述论文。</p>
+                </div>
+                <div class="card-footer">
+                    <span>启动系统</span>
+                    <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+        </div>
+
+        <div class="card">
+            <a href="mem_thesis_assist.html" class="card-link" target="_self">
+                <div class="card-content">
+                    <div class="card-icon"><i class="fas fa-graduation-cap"></i></div>
+                    <h3>MEM学位论文辅助系统</h3>
+                    <p>专为工程管理硕士打造，涵盖选题、结构设计、工程案例整合及学术规范校验，全流程支撑学位论文。</p>
+                </div>
+                <div class="card-footer">
+                    <span>启动系统</span>
+                    <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+        </div>
+
+        <div class="card">
+            <a href="mem_figure_gen.html" class="card-link" target="_self">
+                <div class="card-content">
+                    <div class="card-icon"><i class="fas fa-chart-simple"></i></div>
+                    <h3>MEM论文图生成模块</h3>
+                    <p>自动生成高质量技术路线图、流程图、数据可视化图表，符合工程管理论文出版标准，一键导出矢量图。</p>
+                </div>
+                <div class="card-footer">
+                    <span>启动系统</span>
+                    <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+        </div>
+
+        <div class="card coming-soon">
+            <div class="card-content">
+                <div class="card-icon"><i class="fas fa-rocket"></i></div>
+                <h3>更多科研工具 <span class="badge-soon">即将上线</span></h3>
+                <p>实验数据智能分析、基金本子润色、学术翻译引擎…… 更多模块持续迭代，助力科研全周期。</p>
+            </div>
+            <div class="card-footer" style="color:#8ba0bc;">
+                <span>敬请期待</span>
+                <i class="fas fa-clock"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- 优化后的免责声明 + 捐赠区 (结合图片文本内容) -->
+    <div class="info-row">
+        <div class="disclaimer">
+            <h4><i class="fas fa-scale-balanced"></i> 免责声明</h4>
+            <p>本网页所提供的各类工具，均由作者基于个人兴趣开发编写。因技术水平所限，程序中难免存在疏漏、BUG 或不稳定情况，用户在使用过程中若因此产生不便或相关损失，网站作者不承担任何法律及赔偿责任。</p>
+            <p>本站所有工具均<strong class="highlight-text">免费开放使用</strong>，如使用时遇到问题，恳请文明反馈，请勿使用辱骂、粗俗言论，可将问题发送至邮箱：<a href="mailto:925876709@qq.com" class="email-link">925876709@qq.com</a>，作者对此深表感激，您的反馈将成为程序优化改进的重要动力。</p>
+            <p>若您在使用过程中觉得工具对您有所帮助，为支持网站持续运营与功能优化升级，本站自愿接受捐赠，金额随心，丰俭由人。衷心感谢每一位用户的使用、支持与鼓励！</p>
+            <p style="margin-top: 6px; font-size:0.8rem; color:#54708f;"><i class="fas fa-shield-alt"></i> 系统生成内容仅供参考，最终成果请结合学术规范及导师指导，使用者对成果负全部责任。</p>
+        </div>
+
+        <div class="donation">
+            <h4><i class="fab fa-weixin"></i> 自愿捐赠 · 助力科研</h4>
+            <p>“金额随心，丰俭由人”——您的每一份心意都将用于服务器维护与新功能研发，让智能工具惠及更多学者。</p>
+            <div class="wechat-qr">
+                <div class="qr-placeholder" id="wechatQRContainer">
+ 		   <img src="wechat_pay.png" alt="微信收款码" width="160" height="160" style="border-radius: 12px; 		display: block;">
+		    <div class="qr-caption">
+ 	       		<i class="fas fa-qrcode"></i> 微信扫码支持
+                    </div>
+                </div>
+                <div class="donation-note">
+                    📌 真实部署时请将上方替换为您的微信收款码图片<br>(建议尺寸 160x160，确保扫码清晰)
+                </div>
+                <button id="remindReplaceBtn" style="margin-top: 10px;"><i class="fas fa-image"></i> 替换指引</button>
+            </div>
+            <p class="donation-note" style="margin-top: 0.8rem;"><i class="fas fa-heart" style="color:#e66767;"></i> 感恩相伴，智研同行</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>© 2025 智能科研辅助系统 | 个人开发 · 公益学术支持 | 版本 2.0</p>
+        <p style="margin-top: 0.3rem; font-size: 0.7rem;">所有功能模块均调用独立HTML文件，点击卡片即可使用相应工具</p>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // 替换收款码指引提示
+        const remindBtn = document.getElementById('remindReplaceBtn');
+        if (remindBtn) {
+            remindBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                alert("📌 替换微信收款码指引：\n\n1. 准备一张清晰的微信收款码截图（方形，建议尺寸 160x160 以上）。\n2. 找到代码中 id 为「wechatQRContainer」的容器，将其内容替换为 <img src='您的图片路径' width='160' height='160' style='border-radius:12px;'> \n3. 推荐将收款码图片放在本系统 /images/ 文件夹内，并修改引用路径。\n\n当前为模拟占位样式，正式部署请务必替换为真实收款码图片。");
+            });
+        }
+
+        // 即将推出卡片提示（保持友好）
+        const comingCard = document.querySelector('.coming-soon');
+        if (comingCard) {
+            comingCard.addEventListener('click', (e) => {
+                if (e.target.closest('.coming-soon')) {
+                    let toast = document.createElement('div');
+                    toast.innerText = '✨ 更多功能正在研发中，敬请期待 ✨';
+                    toast.style.position = 'fixed';
+                    toast.style.bottom = '24px';
+                    toast.style.left = '50%';
+                    toast.style.transform = 'translateX(-50%)';
+                    toast.style.backgroundColor = '#1e3a5f';
+                    toast.style.color = '#fff';
+                    toast.style.padding = '10px 24px';
+                    toast.style.borderRadius = '40px';
+                    toast.style.fontSize = '0.85rem';
+                    toast.style.zIndex = '999';
+                    toast.style.fontWeight = '500';
+                    toast.style.boxShadow = '0 8px 20px rgba(0,0,0,0.15)';
+                    toast.style.backdropFilter = 'blur(4px)';
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 2200);
+                }
+            });
+        }
+
+        // 平滑页面过渡
+        document.body.style.opacity = '0';
+        document.body.style.transition = 'opacity 0.2s ease';
+        window.addEventListener('load', () => {
+            document.body.style.opacity = '1';
+        });
+
+        // 确保所有功能卡片跳转符合预期（控制台友好提醒）
+        const links = document.querySelectorAll('.card-link');
+        links.forEach(link => {
+            link.addEventListener('click', function() {
+                console.log(`🔗 导航至智能模块: ${this.getAttribute('href')}`);
+            });
+        });
+    })();
+</script>
+</body>
+</html>
