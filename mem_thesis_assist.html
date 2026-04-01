@@ -1,0 +1,2336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEM学位论文智能写作助手 v3.4 - 智能引用版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.umd.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        academic: '#165DFF',
+                        lightAcademic: '#E8F3FF',
+                        darkAcademic: '#0E42B3',
+                        success: '#00A870',
+                        warning: '#FF9F43',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .step-active { @apply bg-academic text-white border-academic; }
+        .card-shadow { @apply shadow-md hover:shadow-lg transition-shadow; }
+        .upload-zone {
+            @apply border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-academic hover:bg-lightAcademic transition-all;
+        }
+        .progress-bar { @apply h-2 bg-gray-200 rounded-full overflow-hidden; }
+        .progress-fill { @apply h-full bg-gradient-to-r from-academic to-blue-400 transition-all duration-500; }
+        .chapter-card {
+            @apply bg-white rounded-lg p-3 border border-gray-200 cursor-pointer hover:border-academic transition-all;
+        }
+        .chapter-card.active { @apply border-academic bg-lightAcademic; }
+        .chapter-card.completed { @apply border-success bg-green-50; }
+        .chat-bubble { @apply rounded-2xl px-4 py-2 max-w-[85%] mb-2; }
+        .chat-ai { @apply bg-academic text-white rounded-bl-none; }
+        .chat-user { @apply bg-gray-100 text-gray-800 rounded-br-none ml-auto; }
+        .typing-indicator span {
+            @apply inline-block w-2 h-2 bg-gray-400 rounded-full mx-0.5;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-6px); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 顶部配置栏 -->
+    <div class="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex flex-col lg:flex-row gap-3 items-center justify-between">
+            <h1 class="text-xl font-bold text-academic flex items-center">
+                <i class="fas fa-graduation-cap mr-2"></i>MEM学位论文智能写作助手 v3.4
+                <span class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">智能引用版</span>
+            </h1>
+            <div class="flex flex-wrap gap-3 items-center">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-600">API Key：</label>
+                    <input type="password" id="apiKey" placeholder="输入API Key" 
+                        class="px-3 py-2 border rounded-md w-48 text-sm focus:ring-2 focus:ring-academic">
+                </div>
+                <select id="aiModel" class="px-3 py-2 border rounded-md text-sm">
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash (推荐)</option>
+                    <option value="gemini-2.0-pro">Gemini 2.0 Pro</option>
+                    <option value="gpt-4o">GPT-4o</option>
+                    <option value="claude-3-5-sonnet">Claude 3.5</option>
+                    <option value="deepseek-chat">DeepSeek</option>
+                    <option value="qwen-plus">通义Qwen</option>
+                    <option value="custom">其他(自定义)</option>
+                </select>
+                <input type="text" id="customEndpoint" placeholder="自定义API端点" 
+                    class="px-2 py-2 border rounded-md text-sm w-40 hidden">
+                <input type="text" id="customModel" placeholder="模型名称" 
+                    class="px-2 py-2 border rounded-md text-sm w-28 hidden">
+                <button id="clearAllData" class="px-3 py-2 bg-red-100 text-red-600 rounded-md text-sm hover:bg-red-200" title="清空所有数据">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="max-w-7xl mx-auto pt-24 px-4 pb-10">
+        
+        <!-- ========== 进度总览条 ========== -->
+        <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-gray-700">
+                    <i class="fas fa-chart-pie mr-2 text-academic"></i>论文完成进度
+                </span>
+                <span id="progressPercent" class="text-lg font-bold text-academic">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between mt-2 text-xs text-gray-500">
+                <span>开题报告</span>
+                <span>论文大纲</span>
+                <span>绪论</span>
+                <span>理论基础</span>
+                <span>研究设计</span>
+                <span>实证分析</span>
+                <span>结论展望</span>
+            </div>
+        </div>
+
+        <!-- ========== 步骤导航 ========== -->
+        <div class="flex flex-wrap gap-2 mb-6">
+            <button class="step-btn step-active px-4 py-2 rounded-full border border-gray-300 flex items-center text-sm" data-step="1">
+                <i class="fas fa-file-alt mr-2"></i>1.开题报告
+            </button>
+            <button class="step-btn px-4 py-2 rounded-full border border-gray-300 flex items-center text-sm" data-step="2">
+                <i class="fas fa-sitemap mr-2"></i>2.论文大纲
+            </button>
+            <button class="step-btn px-4 py-2 rounded-full border border-gray-300 flex items-center text-sm" data-step="3">
+                <i class="fas fa-pen-fancy mr-2"></i>3.章节撰写
+            </button>
+            <button class="step-btn px-4 py-2 rounded-full border border-gray-300 flex items-center text-sm" data-step="4">
+                <i class="fas fa-check-double mr-2"></i>4.优化导出
+            </button>
+            <button id="showGuide" class="px-4 py-2 rounded-full border border-gray-300 flex items-center text-sm bg-yellow-50 hover:bg-yellow-100">
+                <i class="fas fa-book-open mr-2 text-warning"></i>写作规范
+            </button>
+        </div>
+
+        <!-- ========== 步骤1：开题报告 ========== -->
+        <div id="step1" class="space-y-6">
+            <!-- AI分析开题报告 -->
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-search text-academic mr-2"></i>开题报告分析与处理
+                    <span class="ml-2 text-xs bg-academic/10 text-academic px-2 py-1 rounded">支持Word/PDF/纯文本</span>
+                </h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- 文件上传 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">上传开题报告文件：</label>
+                        <div class="upload-zone" id="uploadArea">
+                            <i class="fas fa-file-upload text-3xl text-gray-400 mb-2"></i>
+                            <p class="text-sm text-gray-600">点击或拖拽上传</p>
+                            <p class="text-xs text-gray-500">.docx / .pdf</p>
+                            <input type="file" id="fileInput" accept=".docx,.pdf" class="hidden">
+                        </div>
+                        <p id="fileStatus" class="text-sm text-gray-500 mt-2">未选择文件</p>
+                    </div>
+
+                    <!-- 文本粘贴 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">或粘贴文本内容：</label>
+                        <textarea id="openingReport" rows="8" placeholder="请将开题报告全文粘贴至此..."
+                            class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-academic"></textarea>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-3 mt-4">
+                    <button id="analyzeReport" class="px-5 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic transition-colors">
+                        <i class="fas fa-search mr-2"></i>AI深度分析开题报告
+                    </button>
+                    <button id="extractKeywords" class="px-5 py-2.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors">
+                        <i class="fas fa-tags mr-2"></i>提取关键词与研究框架
+                    </button>
+                    <button id="clearReport" class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                        <i class="fas fa-trash mr-2"></i>清空
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI分析结果 -->
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-microscope text-purple-600 mr-2"></i>AI分析诊断结果
+                </h2>
+                
+                <!-- 分析评分卡片 -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-red-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-red-600" id="scoreLogic">--</div>
+                        <div class="text-xs text-gray-600">逻辑完整性</div>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-orange-600" id="scoreFeasibility">--</div>
+                        <div class="text-xs text-gray-600">研究可行性</div>
+                    </div>
+                    <div class="bg-yellow-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-yellow-600" id="scoreInnovation">--</div>
+                        <div class="text-xs text-gray-600">创新点明确度</div>
+                    </div>
+                    <div class="bg-blue-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-blue-600" id="scoreStandard">--</div>
+                        <div class="text-xs text-gray-600">MEM规范符合</div>
+                    </div>
+                </div>
+
+                <div id="analyzeResult" class="p-4 bg-gray-50 rounded-md border border-gray-200 min-h-[100px]">
+                    <p class="text-sm text-gray-500">分析结果将在此展示</p>
+                </div>
+            </div>
+
+            <!-- 研究框架提取 -->
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-project-diagram text-academic mr-2"></i>研究框架提取
+                </h2>
+                <div id="researchFramework" class="p-4 bg-gray-50 rounded-md border border-gray-200 min-h-[80px]">
+                    <p class="text-sm text-gray-600">点击"提取关键词"后显示</p>
+                </div>
+            </div>
+
+            <!-- 步骤导航 -->
+            <div class="flex justify-end">
+                <button id="goToStep2" class="px-6 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                    进入论文大纲 <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== 步骤2：论文大纲 ========== -->
+        <div id="step2" class="hidden space-y-6">
+            <div class="grid lg:grid-cols-2 gap-6">
+                <!-- 左侧：大纲编辑 -->
+                <div class="space-y-6">
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-edit text-academic mr-2"></i>论文大纲
+                        </h2>
+                        
+                        <!-- 模板选择 -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">选择大纲模板：</label>
+                            <div class="flex flex-wrap gap-2">
+                                <button class="template-btn active px-4 py-2 border rounded-lg text-sm hover:bg-gray-50" data-template="standard" onclick="selectTemplate('standard', event)">
+                                    <i class="fas fa-list-alt mr-1"></i>标准实证型
+                                </button>
+                                <button class="template-btn px-4 py-2 border rounded-lg text-sm hover:bg-gray-50" data-template="case" onclick="selectTemplate('case', event)">
+                                    <i class="fas fa-search-plus mr-1"></i>案例研究型
+                                </button>
+                                <button class="template-btn px-4 py-2 border rounded-lg text-sm hover:bg-gray-50" data-template="engineering" onclick="selectTemplate('engineering', event)">
+                                    <i class="fas fa-cogs mr-1"></i>工程管理型
+                                </button>
+                                <button class="template-btn px-4 py-2 border rounded-lg text-sm hover:bg-gray-50" data-template="custom" onclick="selectTemplate('custom', event)">
+                                    <i class="fas fa-pencil-alt mr-1"></i>自定义
+                                </button>
+                            </div>
+                        </div>
+
+                        <textarea id="paperOutline" rows="12" placeholder="在此编辑论文大纲..."
+                            class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-academic font-mono text-sm"></textarea>
+                        
+                        <div class="flex flex-wrap gap-3 mt-4">
+                            <button id="generateOutline" class="px-5 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                                <i class="fas fa-magic mr-2"></i>AI生成大纲
+                            </button>
+                            <button id="optimizeOutline" class="px-5 py-2.5 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                                <i class="fas fa-wand-magic-sparkles mr-2"></i>AI优化大纲
+                            </button>
+                            <button id="confirmOutline" class="px-5 py-2.5 bg-green-600 text-white rounded-md hover:bg-green-700">
+                                <i class="fas fa-check mr-2"></i>确认大纲
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：大纲预览 -->
+                <div class="space-y-6">
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-eye text-academic mr-2"></i>大纲预览
+                        </h2>
+                        <div id="outlinePreview" class="p-4 bg-gray-50 rounded-md border border-gray-200 max-h-[400px] overflow-y-auto">
+                            <p class="text-gray-500 text-sm">点击"AI生成大纲"后预览</p>
+                        </div>
+                    </div>
+
+                    <!-- 当前研究信息 -->
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-info-circle text-academic mr-2"></i>研究主题信息
+                        </h2>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-sm text-gray-600">研究主题：</label>
+                                <p id="researchTopicDisplay" class="text-sm font-medium text-gray-800">未设置（可在开题报告分析后自动提取）</p>
+                            </div>
+                            <div>
+                                <label class="text-sm text-gray-600">关键词：</label>
+                                <p id="keywordsDisplay" class="text-sm text-gray-600">--</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 步骤导航 -->
+            <div class="flex justify-between">
+                <button id="backToStep1" class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                    <i class="fas fa-arrow-left mr-2"></i>返回开题报告
+                </button>
+                <button id="goToStep3" class="px-6 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                    进入章节撰写 <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== 步骤3：章节撰写 ========== -->
+        <div id="step3" class="hidden space-y-6">
+            <div class="grid lg:grid-cols-3 gap-6">
+                <!-- 左侧：章节导航 + 素材库 -->
+                <div class="lg:col-span-1 space-y-4">
+                    <!-- 章节导航 -->
+                    <div class="bg-white rounded-xl p-4 card-shadow">
+                        <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-list-ol text-academic mr-2"></i>论文章节
+                        </h3>
+                        <div id="chapterList" class="space-y-2"></div>
+                    </div>
+
+                    <!-- 字数统计 -->
+                    <div class="bg-white rounded-xl p-4 card-shadow">
+                        <h3 class="font-bold text-gray-800 mb-3">
+                            <i class="fas fa-calculator mr-2 text-academic"></i>字数统计
+                        </h3>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span>已完成字数：</span>
+                                <span id="completedWords" class="font-bold text-academic">0</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>目标字数：</span>
+                                <span class="font-bold">30,000</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>完成率：</span>
+                                <span id="wordProgress" class="font-bold text-success">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 智能素材库（全文级） -->
+                    <div class="bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <i class="fas fa-database text-purple-600 mr-2"></i>论文素材库
+                                <span class="ml-1 text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">全文</span>
+                            </h3>
+                            <button id="openMaterialPool" class="text-xs text-academic hover:underline">
+                                <i class="fas fa-external-link-alt mr-1"></i>管理
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-3">素材库针对整篇论文，所有章节可共享使用</p>
+                        
+                        <!-- 素材统计 -->
+                        <div class="grid grid-cols-3 gap-2 mb-3 text-center text-xs">
+                            <div class="bg-blue-50 rounded p-2">
+                                <div class="font-bold text-blue-600" id="docCount">0</div>
+                                <div class="text-gray-500">文献</div>
+                            </div>
+                            <div class="bg-green-50 rounded p-2">
+                                <div class="font-bold text-green-600" id="dataCount">0</div>
+                                <div class="text-gray-500">数据</div>
+                            </div>
+                            <div class="bg-orange-50 rounded p-2">
+                                <div class="font-bold text-orange-600" id="caseCount">0</div>
+                                <div class="text-gray-500">案例</div>
+                            </div>
+                        </div>
+
+                        <!-- 素材列表（简化版） -->
+                        <div id="materialListMini" class="space-y-2 max-h-40 overflow-y-auto">
+                            <p class="text-xs text-gray-400 text-center py-4">暂无素材</p>
+                        </div>
+                        <button id="addReference" class="mt-3 w-full px-3 py-2 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200">
+                            <i class="fas fa-plus mr-1"></i>添加参考文献
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 中间+右侧：写作工作区 -->
+                <div class="lg:col-span-2 space-y-4">
+                    <!-- 当前章节信息 -->
+                    <div class="bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 id="currentChapterTitle" class="text-lg font-bold text-gray-800">第1章 绪论</h2>
+                                <p class="text-sm text-gray-500" id="chapterTargetWords">建议字数：4000-5000字</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <span id="chapterStatus" class="px-3 py-1 bg-gray-100 rounded-full text-xs">未开始</span>
+                                <span id="chapterWordCount" class="px-3 py-1 bg-academic/10 text-academic rounded-full text-xs">0字</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 写作资料与要求（简化版 - 无需研究方向输入） -->
+                    <div class="bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <i class="fas fa-clipboard-list text-academic mr-2"></i>写作要求
+                            </h3>
+                            <div class="flex gap-2">
+                                <button id="generateRequirements" class="px-3 py-1.5 bg-purple-600 text-white rounded text-xs hover:bg-purple-700">
+                                    <i class="fas fa-magic mr-1"></i>生成要求
+                                </button>
+                                <button id="regenerateRequirements" class="text-xs text-purple-600 hover:underline">
+                                    <i class="fas fa-redo mr-1"></i>重置
+                                </button>
+                            </div>
+                        </div>
+                        <textarea id="writingRequirements" rows="4" placeholder="点击"生成要求"获取AI生成的写作指导..."
+                            class="w-full px-4 py-3 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-purple-50/30 text-sm"></textarea>
+                    </div>
+
+                    <!-- 章节写作要点提示 -->
+                    <div id="chapterHint" class="bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-start">
+                            <i class="fas fa-lightbulb text-academic mt-1 mr-2"></i>
+                            <div class="text-sm text-gray-700">
+                                <strong id="hintTitle">绪论写作要点：</strong>
+                                <ul id="hintList" class="list-disc list-inside mt-1 space-y-1 text-gray-600">
+                                    <li>研究背景要结合行业发展热点和实际问题</li>
+                                    <li>理论意义与实践意义分两个维度阐述</li>
+                                    <li>国内外研究现状需分类综述（至少15篇核心文献）</li>
+                                    <li>研究内容要明确、具体、可量化</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 章节内容 -->
+                    <div class="bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <i class="fas fa-file-alt text-academic mr-2"></i>章节内容
+                            </h3>
+                            <div class="flex gap-2 items-center">
+                                <span id="contentWordCount" class="text-sm text-gray-500">0 字</span>
+                                <button id="insertMaterial" class="px-3 py-1 bg-purple-100 text-purple-700 rounded text-sm hover:bg-purple-200" title="从素材库插入引用">
+                                    <i class="fas fa-quote-right mr-1"></i>插入引用
+                                </button>
+                                <button id="saveChapter" class="px-3 py-1 bg-academic text-white rounded text-sm hover:bg-darkAcademic">
+                                    <i class="fas fa-save mr-1"></i>保存
+                                </button>
+                            </div>
+                        </div>
+                        <textarea id="chapterContent" rows="12" placeholder="在此撰写章节内容，支持直接从素材库插入参考文献引用..."
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-academic font-sans leading-relaxed"></textarea>
+                        
+                        <div class="flex items-center justify-between mt-3">
+                            <div class="flex gap-2">
+                                <button id="polishContent" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm">
+                                    <i class="fas fa-sparkles mr-2"></i>润色
+                                </button>
+                                <button id="aiWriteChapter" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm">
+                                    <i class="fas fa-robot mr-2"></i>AI撰写
+                                </button>
+                            </div>
+                            <button id="nextChapter" class="px-4 py-2 bg-academic text-white rounded-lg hover:bg-darkAcademic">
+                                <i class="fas fa-arrow-right mr-2"></i>下一章节
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 步骤导航 -->
+            <div class="flex justify-between">
+                <button id="backToStep2" class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                    <i class="fas fa-arrow-left mr-2"></i>返回大纲
+                </button>
+                <button id="goToStep4" class="px-6 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                    进入优化导出 <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== 步骤4：优化导出 ========== -->
+        <div id="step4" class="hidden space-y-6">
+            <div class="grid lg:grid-cols-2 gap-6">
+                <!-- 左侧：检查与优化 -->
+                <div class="space-y-6">
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-clipboard-check text-academic mr-2"></i>论文质量检查
+                        </h2>
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <button id="checkLogic" class="px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-sm">
+                                <i class="fas fa-code-branch mr-2"></i>逻辑一致性检查
+                            </button>
+                            <button id="checkFormat" class="px-4 py-3 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 text-sm">
+                                <i class="fas fa-align-left mr-2"></i>格式规范检查
+                            </button>
+                            <button id="checkCitation" class="px-4 py-3 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 text-sm">
+                                <i class="fas fa-quote-right mr-2"></i>文献引用检查
+                            </button>
+                            <button id="checkPlagiarism" class="px-4 py-3 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 text-sm">
+                                <i class="fas fa-shield-alt mr-2"></i>重复率预估
+                            </button>
+                        </div>
+                        <div id="checkResults" class="p-4 bg-gray-50 rounded-md border border-gray-200 min-h-[100px]">
+                            <p class="text-sm text-gray-500">点击上方按钮进行各项检查</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-magic text-purple-600 mr-2"></i>全文优化
+                        </h2>
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <button id="optimizeAcademic" class="px-4 py-3 bg-academic text-white rounded-lg hover:bg-darkAcademic text-sm">
+                                <i class="fas fa-book mr-2"></i>学术表达优化
+                            </button>
+                            <button id="optimizeCoherence" class="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm">
+                                <i class="fas fa-link mr-2"></i>衔接过渡优化
+                            </button>
+                            <button id="optimizeTerminology" class="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                                <i class="fas fa-language mr-2"></i>术语统一
+                            </button>
+                            <button id="optimizeConcise" class="px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 text-sm">
+                                <i class="fas fa-compress-alt mr-2"></i>精简冗余
+                            </button>
+                        </div>
+                        <div id="optimizeResult" class="p-4 bg-gray-50 rounded-md border border-gray-200 min-h-[100px]">
+                            <p class="text-sm text-gray-500">优化结果将在此显示</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：论文预览与导出 -->
+                <div class="space-y-6">
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-file-alt text-academic mr-2"></i>论文全文预览
+                        </h2>
+                        <div class="mb-4 p-3 bg-gray-50 rounded-md">
+                            <div class="flex justify-between text-sm">
+                                <span>总字数：<strong id="totalWordCount">0</strong></span>
+                                <span>章节数：<strong id="chapterCount">0</strong></span>
+                                <span>完成度：<strong id="completionRate">0%</strong></span>
+                            </div>
+                        </div>
+                        <div id="paperPreview" class="p-4 bg-gray-50 rounded-md border border-gray-200 max-h-[400px] overflow-y-auto">
+                            <p class="text-sm text-gray-500">保存章节后在此预览完整论文</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-download text-academic mr-2"></i>导出论文
+                        </h2>
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <button id="exportWord" class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                <i class="fas fa-file-word mr-2"></i>Word文档(.docx)
+                            </button>
+                            <button id="exportPDF" class="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                                <i class="fas fa-file-pdf mr-2"></i>PDF文档
+                            </button>
+                            <button id="exportTxt" class="px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                                <i class="fas fa-file-alt mr-2"></i>纯文本(.txt)
+                            </button>
+                            <button id="exportMarkdown" class="px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900">
+                                <i class="fas fa-code mr-2"></i>Markdown
+                            </button>
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>导出将包含封面、目录、正文、参考文献等完整结构
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 步骤导航 -->
+            <div class="text-center">
+                <button id="backToStep3" class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                    <i class="fas fa-arrow-left mr-2"></i>返回章节撰写
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 素材库弹窗 ========== -->
+    <div id="materialModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
+            <div class="p-4 border-b flex items-center justify-between">
+                <h3 class="font-bold text-lg flex items-center">
+                    <i class="fas fa-database text-purple-600 mr-2"></i>论文素材库管理
+                    <span class="ml-2 text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">全文素材</span>
+                </h3>
+                <button onclick="closeMaterialPool()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-4 border-b bg-gray-50">
+                <div class="flex gap-2 mb-3">
+                    <button onclick="renderMaterialListFull('all')" class="material-filter active px-3 py-1 bg-academic text-white rounded text-sm">全部</button>
+                    <button onclick="renderMaterialListFull('document')" class="material-filter px-3 py-1 border rounded text-sm hover:bg-gray-100">文献</button>
+                    <button onclick="renderMaterialListFull('data')" class="material-filter px-3 py-1 border rounded text-sm hover:bg-gray-100">数据</button>
+                    <button onclick="renderMaterialListFull('case')" class="material-filter px-3 py-1 border rounded text-sm hover:bg-gray-100">案例</button>
+                </div>
+                
+                <!-- 上传区 -->
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <input type="file" id="materialFileInput" accept=".docx,.pdf,.xlsx,.txt" multiple class="hidden">
+                        <button onclick="document.getElementById('materialFileInput').click()" class="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-academic hover:text-academic">
+                            <i class="fas fa-upload mr-2"></i>上传文件
+                        </button>
+                    </div>
+                    <button onclick="document.getElementById('pasteMaterialBtn').click()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100">
+                        <i class="fas fa-paste mr-2"></i>粘贴内容
+                    </button>
+                    <button onclick="document.getElementById('aiGenerateBtn').click()" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">
+                        <i class="fas fa-robot mr-2"></i>AI生成
+                    </button>
+                </div>
+            </div>
+
+            <div id="uploadProgress" class="hidden px-4 py-2 bg-blue-50 text-blue-700 text-sm">
+                <i class="fas fa-spinner fa-spin mr-2"></i>正在上传和解析文件...
+            </div>
+
+            <div id="materialListFull" class="p-4 max-h-[400px] overflow-y-auto">
+                <p class="text-center text-gray-500 py-8">暂无素材，请上传或生成</p>
+            </div>
+
+            <!-- 粘贴素材弹窗 -->
+            <div id="pasteMaterialModal" class="hidden fixed inset-0 bg-black/50 z-60 flex items-center justify-center">
+                <div class="bg-white rounded-xl w-full max-w-lg p-6">
+                    <h4 class="font-bold mb-4">添加素材</h4>
+                    <div class="mb-3">
+                        <label class="text-sm text-gray-600">素材类型：</label>
+                        <select id="materialType" class="border rounded px-2 py-1 text-sm">
+                            <option value="document">文献资料</option>
+                            <option value="data">数据资料</option>
+                            <option value="case">案例资料</option>
+                        </select>
+                    </div>
+                    <textarea id="pasteContent" rows="6" placeholder="粘贴素材内容..." class="w-full border rounded p-2 text-sm mb-3"></textarea>
+                    <div class="flex justify-end gap-2">
+                        <button onclick="closePasteMaterialModal()" class="px-4 py-2 border rounded text-sm">取消</button>
+                        <button onclick="addPasteMaterial()" class="px-4 py-2 bg-academic text-white rounded text-sm">确认添加</button>
+                    </div>
+                </div>
+            </div>
+            <button id="pasteMaterialBtn" onclick="document.getElementById('pasteMaterialModal').classList.remove('hidden')" class="hidden"></button>
+
+            <!-- AI生成素材弹窗 -->
+            <div id="aiGenerateModal" class="hidden fixed inset-0 bg-black/50 z-60 flex items-center justify-center">
+                <div class="bg-white rounded-xl w-full max-w-lg p-6">
+                    <h4 class="font-bold mb-4">AI生成素材</h4>
+                    <p class="text-sm text-gray-600 mb-3">描述你需要什么类型的素材（如：相关文献、理论模型、案例数据等）</p>
+                    <textarea id="aiGenerateInput" rows="4" placeholder="例如：生成5条关于供应链风险管理的参考文献..." class="w-full border rounded p-2 text-sm mb-3"></textarea>
+                    <div id="aiGenerateProgress" class="hidden py-2 text-sm text-purple-600">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>AI正在生成素材...
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button onclick="closeAiGenerateModal()" class="px-4 py-2 border rounded text-sm">取消</button>
+                        <button onclick="aiGenerateMaterial()" id="aiGenerateMaterialBtn" class="px-4 py-2 bg-purple-600 text-white rounded text-sm">生成</button>
+                    </div>
+                </div>
+            </div>
+            <button id="aiGenerateBtn" onclick="document.getElementById('aiGenerateModal').classList.remove('hidden')" class="hidden"></button>
+
+            <div class="p-4 border-t bg-gray-50">
+                <button onclick="closeMaterialPool()" class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 参考文献插入弹窗 ========== -->
+    <div id="referenceModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl w-full max-w-2xl max-h-[70vh] overflow-hidden">
+            <div class="p-4 border-b flex items-center justify-between">
+                <h3 class="font-bold text-lg flex items-center">
+                    <i class="fas fa-quote-right text-academic mr-2"></i>插入参考文献引用
+                </h3>
+                <button onclick="closeReferenceModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <p class="text-sm text-gray-600 mb-3">从素材库中选择文献引用（将自动生成符合GB/T 7714格式的引用）：</p>
+                <div id="referenceList" class="space-y-2 max-h-[300px] overflow-y-auto">
+                    <p class="text-gray-500 text-sm">暂无文献素材</p>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-gray-50">
+                <button onclick="closeReferenceModal()" class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 写作规范弹窗 ========== -->
+    <div id="guideModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl w-full max-w-3xl max-h-[80vh] overflow-hidden">
+            <div class="p-4 border-b flex items-center justify-between">
+                <h3 class="font-bold text-lg">MEM学位论文写作规范</h3>
+                <button onclick="document.getElementById('guideModal').classList.add('hidden')" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto max-h-[60vh]">
+                <h4 class="font-bold text-academic mb-3">一、论文基本要求</h4>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-2 mb-4">
+                    <li>论文字数一般不少于3万字（管理类）</li>
+                    <li>论文应体现作者独立从事科学研究的能力</li>
+                    <li>论文应有创新点或应用价值</li>
+                </ul>
+                <h4 class="font-bold text-academic mb-3">二、论文结构规范</h4>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-2 mb-4">
+                    <li>封面、摘要（中英文）、关键词</li>
+                    <li>目录、图表目录</li>
+                    <li>正文：绪论→理论综述→研究设计→实证分析→结论建议</li>
+                    <li>参考文献（至少30篇，含外文文献）</li>
+                    <li>致谢、附录</li>
+                </ul>
+                <h4 class="font-bold text-academic mb-3">三、格式要求</h4>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-2 mb-4">
+                    <li>正文宋体小四号，1.5倍行距</li>
+                    <li>参考文献采用GB/T 7714格式</li>
+                    <li>图表标注规范，编号清晰</li>
+                </ul>
+            </div>
+            <div class="p-4 border-t bg-gray-50">
+                <button onclick="document.getElementById('guideModal').classList.add('hidden')" class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载提示 -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl p-8 text-center">
+            <div class="animate-spin text-5xl text-academic mb-4">
+                <i class="fas fa-spinner"></i>
+            </div>
+            <p id="loadingText" class="text-gray-700 font-medium">AI正在处理中...</p>
+        </div>
+    </div>
+
+<script>
+// ==================== 全局状态 ====================
+const state = {
+    currentStep: 1,
+    currentChapter: 1,
+    apiKey: '',
+    aiModel: 'gemini-2.0-flash',
+    chapters: {},
+    materials: [],
+    researchTopic: '',
+    requirements: '',
+    outline: ''
+};
+
+// MEM标准章节配置
+const chapterConfig = [
+    {
+        id: 1,
+        name: '第1章 绪论',
+        minWords: 4000,
+        tips: [
+            '研究背景要结合行业发展热点和实际问题',
+            '理论意义与实践意义分两个维度阐述',
+            '国内外研究现状需分类综述（至少15篇核心文献）',
+            '研究内容要明确、具体、可量化',
+            '技术路线用流程框图表示，清晰展示研究步骤'
+        ]
+    },
+    {
+        id: 2,
+        name: '第2章 理论基础与文献综述',
+        minWords: 6000,
+        tips: [
+            '核心概念需权威定义，注明出处',
+            '理论模型要有适用性分析',
+            '文献综述要有批判性思维，指出现有研究不足',
+            '研究方法选择要有理论依据',
+            '建立本文的理论框架图'
+        ]
+    },
+    {
+        id: 3,
+        name: '第3章 研究设计与方案',
+        minWords: 4000,
+        tips: [
+            '研究假设需明确、可检验',
+            '变量定义要有理论支撑和操作化定义',
+            '模型构建要有逻辑推导过程',
+            '数据来源要说明样本选取依据',
+            '研究设计要有可行性论证'
+        ]
+    },
+    {
+        id: 4,
+        name: '第4章 实证分析与结果',
+        minWords: 10000,
+        tips: [
+            '数据预处理要详细说明（缺失值、异常值处理）',
+            '描述性统计要结合研究问题解读',
+            '假设检验结果要有理论解释',
+            '稳健性检验至少两种方法',
+            '结果分析与理论对话'
+        ]
+    },
+    {
+        id: 5,
+        name: '第5章 结论与展望',
+        minWords: 3000,
+        tips: [
+            '结论要回应研究问题，高度凝练',
+            '管理启示要有针对性和可操作性',
+            '研究局限要客观、具体',
+            '未来展望要有前瞻性和可行性',
+            '避免重复前文，要有新观点'
+        ]
+    }
+];
+
+// 大纲模板
+const outlineTemplates = {
+    standard: `第1章 绪论
+1.1 研究背景
+1.2 研究意义（理论意义+实践意义）
+1.3 国内外研究现状
+1.4 研究内容与技术路线
+1.5 论文结构安排
+
+第2章 理论基础与文献综述
+2.1 核心概念界定
+2.2 相关理论综述
+2.3 研究综述与评述
+2.4 本章小结
+
+第3章 研究设计
+3.1 研究假设
+3.2 变量定义与测量
+3.3 研究模型构建
+3.4 样本与数据来源
+3.5 研究方法
+3.6 本章小结
+
+第4章 实证分析与结果
+4.1 描述性统计分析
+4.2 相关性分析
+4.3 假设检验
+4.4 稳健性检验
+4.5 结果讨论
+4.6 本章小结
+
+第5章 结论与展望
+5.1 主要研究结论
+5.2 管理启示
+5.3 研究局限
+5.4 未来研究展望`,
+    case: `第1章 绪论
+1.1 研究背景
+1.2 研究意义
+1.3 案例研究综述
+1.4 研究内容与方法
+1.5 论文结构
+
+第2章 理论基础与案例背景
+2.1 相关理论
+2.2 案例选取依据
+2.3 案例概况介绍
+2.4 本章小结
+
+第3章 案例分析框架
+3.1 分析维度确定
+3.2 分析指标构建
+3.3 数据收集方法
+3.4 本章小结
+
+第4章 典型案例分析
+4.1 案例一：XXX分析
+4.2 案例二：XXX分析
+4.3 跨案例比较
+4.4 模式提炼
+4.5 本章小结
+
+第5章 结论与建议
+5.1 研究结论
+5.2 对策建议
+5.3 研究局限与展望`,
+    engineering: `第1章 绪论
+1.1 研究背景
+1.2 工程概况
+1.3 研究意义
+1.4 国内外研究
+1.5 研究内容与方法
+1.6 技术路线
+
+第2章 项目管理理论与方法
+2.1 项目管理理论框架
+2.2 相关方法工具
+2.3 文献综述
+2.4 本章小结
+
+第3章 项目概况与问题分析
+3.1 项目基本情况
+3.2 项目管理现状
+3.3 存在问题诊断
+3.4 问题成因分析
+3.5 本章小结
+
+第4章 改进方案设计
+4.1 改进目标与原则
+4.2 方案设计
+4.3 实施路径
+4.4 保障措施
+4.5 预期效果
+4.6 本章小结
+
+第5章 结论与展望
+5.1 主要结论
+5.2 经验启示
+5.3 研究局限
+5.4 未来展望`
+};
+
+// PDF.js配置
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+// ==================== 初始化 ====================
+document.addEventListener('DOMContentLoaded', () => {
+    initChapterList();
+    loadSavedState();
+    loadApiConfig();
+    bindEvents();
+    initStep(1);
+});
+
+function initChapterList() {
+    const list = document.getElementById('chapterList');
+    list.innerHTML = chapterConfig.map(ch => `
+        <div class="chapter-card" data-chapter="${ch.id}">
+            <div class="flex items-center justify-between">
+                <span class="font-medium text-sm">${ch.name}</span>
+                <span class="text-xs text-gray-500 chapter-words">0字</span>
+            </div>
+            <div class="mt-1 text-xs text-gray-500 chapter-status">未开始</div>
+        </div>
+    `).join('');
+    
+    // 点击章节切换
+    list.querySelectorAll('.chapter-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const chapterId = parseInt(card.dataset.chapter);
+            switchChapter(chapterId);
+        });
+    });
+}
+
+function loadApiConfig() {
+    const config = localStorage.getItem('memApiConfig');
+    if (config) {
+        try {
+            const data = JSON.parse(config);
+            document.getElementById('apiKey').value = data.apiKey || '';
+            document.getElementById('aiModel').value = data.aiModel || 'gemini-2.0-flash';
+            state.apiKey = data.apiKey || '';
+            state.aiModel = data.aiModel || 'gemini-2.0-flash';
+            
+            // 如果是自定义模型，显示自定义字段
+            if (data.aiModel === 'custom') {
+                const customEndpoint = document.getElementById('customEndpoint');
+                const customModel = document.getElementById('customModel');
+                customEndpoint.classList.remove('hidden');
+                customModel.classList.remove('hidden');
+                customEndpoint.value = data.customEndpoint || '';
+                customModel.value = data.customModel || '';
+            }
+        } catch(e) {
+            console.warn('加载API配置失败:', e);
+        }
+    }
+    
+    // 页面关闭时自动清除API Key
+    window.addEventListener('beforeunload', function() {
+        // 确保API Key被清除
+        const config = JSON.parse(localStorage.getItem('memApiConfig') || '{}');
+        config.apiKey = '';
+        localStorage.setItem('memApiConfig', JSON.stringify(config));
+    });
+}
+
+function loadSavedState() {
+    const saved = localStorage.getItem('memPaperV34State');
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            state.chapters = data.chapters || {};
+            state.materials = data.materials || [];
+            state.researchTopic = data.researchTopic || '';
+            state.outline = data.outline || '';
+            updateChapterStatusGlobal();
+            updateMaterialStats();
+            renderMaterialListMini();
+            updateProgress();
+        } catch(e) {
+            console.error('加载状态失败:', e);
+        }
+    }
+}
+
+function saveState() {
+    localStorage.setItem('memPaperV34State', JSON.stringify({
+        chapters: state.chapters,
+        materials: state.materials,
+        researchTopic: state.researchTopic,
+        outline: state.outline
+    }));
+}
+
+// ==================== 步骤初始化 ====================
+function initStep(step) {
+    state.currentStep = step;
+    document.querySelectorAll('.step-btn').forEach((btn, i) => {
+        btn.classList.toggle('step-active', i + 1 === step);
+    });
+    document.querySelectorAll('[id^="step"]').forEach(el => el.classList.add('hidden'));
+    document.getElementById(`step${step}`).classList.remove('hidden');
+    updateProgress();
+    
+    // 加载大纲
+    if (step >= 2 && state.outline) {
+        document.getElementById('paperOutline').value = state.outline;
+        updateOutlinePreview();
+        updateResearchTopicDisplay();
+    }
+    
+    // 加载章节内容
+    if (step === 3) {
+        switchChapter(state.currentChapter);
+        updatePaperPreview();
+    }
+    
+    // 更新预览
+    if (step === 4) {
+        updatePaperPreview();
+    }
+}
+
+function updateResearchTopicDisplay() {
+    if (state.researchTopic) {
+        document.getElementById('researchTopicDisplay').textContent = state.researchTopic;
+    } else {
+        document.getElementById('researchTopicDisplay').textContent = '未设置（从开题报告自动提取）';
+    }
+}
+
+// ==================== 事件绑定 ====================
+function bindEvents() {
+    // 步骤切换按钮
+    document.querySelectorAll('.step-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            initStep(parseInt(btn.dataset.step));
+        });
+    });
+    
+    // 写作规范
+    document.getElementById('showGuide').addEventListener('click', () => {
+        document.getElementById('guideModal').classList.remove('hidden');
+    });
+    
+    // 步骤导航
+    document.getElementById('goToStep2').addEventListener('click', () => initStep(2));
+    document.getElementById('backToStep1').addEventListener('click', () => initStep(1));
+    document.getElementById('goToStep3').addEventListener('click', () => {
+        if (!state.outline) {
+            alert('请先生成或确认论文大纲！');
+            return;
+        }
+        initStep(3);
+    });
+    document.getElementById('backToStep2').addEventListener('click', () => initStep(2));
+    document.getElementById('goToStep4').addEventListener('click', () => initStep(4));
+    document.getElementById('backToStep3').addEventListener('click', () => initStep(3));
+    
+    // API配置 - 自动保存模型选择（API Key仅当前会话有效）
+    document.getElementById('apiKey').addEventListener('input', function() {
+        state.apiKey = this.value;
+        // 不保存API Key到localStorage
+    });
+    document.getElementById('aiModel').addEventListener('change', function() {
+        state.aiModel = this.value;
+        // 保存模型选择到localStorage（不保存API Key）
+        const config = JSON.parse(localStorage.getItem('memApiConfig') || '{}');
+        config.aiModel = this.value;
+        localStorage.setItem('memApiConfig', JSON.stringify(config));
+        
+        const customEndpoint = document.getElementById('customEndpoint');
+        const customModel = document.getElementById('customModel');
+        if (this.value === 'custom') {
+            customEndpoint.classList.remove('hidden');
+            customModel.classList.remove('hidden');
+        } else {
+            customEndpoint.classList.add('hidden');
+            customModel.classList.add('hidden');
+        }
+    });
+    
+    // 自定义模型端点
+    document.getElementById('customEndpoint').addEventListener('input', function() {
+        const config = JSON.parse(localStorage.getItem('memApiConfig') || '{}');
+        config.customEndpoint = this.value;
+        localStorage.setItem('memApiConfig', JSON.stringify(config));
+    });
+    document.getElementById('customModel').addEventListener('input', function() {
+        const config = JSON.parse(localStorage.getItem('memApiConfig') || '{}');
+        config.customModel = this.value;
+        localStorage.setItem('memApiConfig', JSON.stringify(config));
+    });
+    
+    // 清空数据
+    document.getElementById('clearAllData').addEventListener('click', () => {
+        if (confirm('确定要清空所有数据吗？此操作不可恢复！')) {
+            localStorage.removeItem('memPaperV34State');
+            location.reload();
+        }
+    });
+    
+    // 步骤1：开题报告
+    document.getElementById('uploadArea').addEventListener('click', () => {
+        document.getElementById('fileInput').click();
+    });
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+    document.getElementById('analyzeReport').addEventListener('click', analyzeOpeningReport);
+    document.getElementById('extractKeywords').addEventListener('click', extractResearchFramework);
+    document.getElementById('clearReport').addEventListener('click', clearOpeningReport);
+    
+    // 步骤2：大纲
+    document.getElementById('generateOutline').addEventListener('click', generateOutline);
+    document.getElementById('optimizeOutline').addEventListener('click', optimizeOutline);
+    document.getElementById('confirmOutline').addEventListener('click', confirmOutline);
+    document.getElementById('paperOutline').addEventListener('input', () => {
+        state.outline = document.getElementById('paperOutline').value;
+        updateOutlinePreview();
+    });
+    
+    // 步骤3：章节撰写
+    document.getElementById('generateRequirements').addEventListener('click', generateRequirements);
+    document.getElementById('regenerateRequirements').addEventListener('click', () => {
+        document.getElementById('writingRequirements').value = '';
+    });
+    document.getElementById('aiWriteChapter').addEventListener('click', startWriting);
+    document.getElementById('saveChapter').addEventListener('click', saveChapterContent);
+    document.getElementById('polishContent').addEventListener('click', polishContent);
+    document.getElementById('nextChapter').addEventListener('click', nextChapter);
+    document.getElementById('chapterContent').addEventListener('input', () => {
+        updateWordCount();
+        updateChapterStatus();
+    });
+    document.getElementById('openMaterialPool').addEventListener('click', openMaterialPool);
+    document.getElementById('insertMaterial').addEventListener('click', openReferenceModal);
+    document.getElementById('addReference').addEventListener('click', openMaterialPool);
+    
+    // 步骤4：检查与优化
+    document.getElementById('checkLogic').addEventListener('click', () => checkPaper('logic'));
+    document.getElementById('checkFormat').addEventListener('click', () => checkPaper('format'));
+    document.getElementById('checkCitation').addEventListener('click', () => checkPaper('citation'));
+    document.getElementById('checkPlagiarism').addEventListener('click', () => checkPaper('plagiarism'));
+    document.getElementById('optimizeAcademic').addEventListener('click', () => optimizePaper('academic'));
+    document.getElementById('optimizeCoherence').addEventListener('click', () => optimizePaper('coherence'));
+    document.getElementById('optimizeTerminology').addEventListener('click', () => optimizePaper('terminology'));
+    document.getElementById('optimizeConcise').addEventListener('click', () => optimizePaper('concise'));
+    document.getElementById('exportWord').addEventListener('click', exportToWord);
+    document.getElementById('exportPDF').addEventListener('click', exportToPDF);
+    document.getElementById('exportTxt').addEventListener('click', exportToTxt);
+    document.getElementById('exportMarkdown').addEventListener('click', exportToMarkdown);
+    
+    // 素材库上传
+    document.getElementById('materialFileInput').addEventListener('change', (e) => {
+        handleMaterialUpload(e.target.files);
+        e.target.value = '';
+    });
+    
+    // ESC关闭弹窗
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            document.getElementById('materialModal').classList.add('hidden');
+            document.getElementById('guideModal').classList.add('hidden');
+            document.getElementById('pasteMaterialModal').classList.add('hidden');
+            document.getElementById('aiGenerateModal').classList.add('hidden');
+            document.getElementById('referenceModal').classList.add('hidden');
+        }
+    });
+}
+
+// ==================== 辅助弹窗关闭函数 ====================
+function closePasteMaterialModal() {
+    document.getElementById('pasteMaterialModal').classList.add('hidden');
+}
+
+function closeAiGenerateModal() {
+    document.getElementById('aiGenerateModal').classList.add('hidden');
+}
+
+// ==================== 加载提示 ====================
+function showLoading(text) {
+    document.getElementById('loadingText').textContent = text;
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+// ==================== 文件处理 ====================
+async function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const fileStatus = document.getElementById('fileStatus');
+    const openingReport = document.getElementById('openingReport');
+    
+    fileStatus.textContent = '正在解析...';
+    fileStatus.className = 'text-sm text-blue-600 mt-2 font-medium';
+    
+    try {
+        let text = '';
+        if (file.name.endsWith('.docx')) {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            text = result.value;
+        } else if (file.name.endsWith('.pdf')) {
+            text = await extractTextFromPDF(file);
+        }
+        
+        openingReport.value = text;
+        fileStatus.textContent = '✓ 解析成功！';
+        fileStatus.className = 'text-sm text-green-600 mt-2 font-medium';
+    } catch (err) {
+        fileStatus.textContent = `✗ 解析失败：${err.message}`;
+        fileStatus.className = 'text-sm text-red-600 mt-2';
+    }
+}
+
+async function extractTextFromPDF(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    
+    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+    }
+    return fullText;
+}
+
+// ==================== AI调用 ====================
+async function callAI(systemPrompt, userPrompt) {
+    const config = JSON.parse(localStorage.getItem('memApiConfig') || '{}');
+    const apiKey = state.apiKey || config.apiKey;
+    const aiModel = state.aiModel || config.aiModel || 'gemini-2.0-flash';
+    const customEndpoint = config.customEndpoint || '';
+    const customModel = config.customModel || '';
+
+    if (!apiKey) {
+        return generateMockResponse(userPrompt.substring(0, 100));
+    }
+
+    try {
+        let response;
+        
+        // 根据选择的模型使用不同的API端点
+        if (aiModel.startsWith('gemini')) {
+            // Google Gemini API
+            const modelName = aiModel === 'gemini-2.0-flash' ? 'gemini-2.0-flash' : aiModel;
+            response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ text: `System: ${systemPrompt}\n\nUser: ${userPrompt}` }]
+                    }],
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 8192
+                    }
+                })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message);
+            return data.candidates[0].content.parts[0].text;
+        } else if (aiModel === 'custom' && customEndpoint) {
+            // 自定义API端点
+            response = await fetch(customEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: customModel || 'gpt-4o',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    temperature: 0.7
+                })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message);
+            return data.choices[0].message.content;
+        } else {
+            // 默认使用OpenAI兼容API
+            response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: aiModel,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    temperature: 0.7
+                })
+            });
+
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message);
+            return data.choices[0].message.content;
+        }
+    } catch (err) {
+        console.error('AI调用失败:', err);
+        alert('AI调用失败：' + err.message);
+        return generateMockResponse(userPrompt.substring(0, 100));
+    }
+}
+
+function generateMockResponse(topic) {
+    const responses = {
+        '分析开题': '【开题报告分析完成】\n\n✓ 逻辑完整性：85分\n✓ 研究可行性：78分\n✓ 创新点明确度：72分\n✓ MEM规范符合：80分\n\n主要建议：\n1. 研究背景建议更紧密结合行业热点\n2. 研究目标可进一步具体化\n3. 技术路线需补充可行性论证',
+        '关键词': '【研究框架提取】\n\n核心关键词：XXX管理、YYY优化、ZZZ评价\n\n研究主线：基于XXX理论的YYY问题研究\n\n理论框架：ABC理论 → XYZ模型 → 应用路径',
+        '大纲': document.getElementById('paperOutline')?.value || outlineTemplates.standard,
+        '写作要求': `【${chapterConfig[state.currentChapter - 1]?.name || '第1章'} 写作要求与要点】\n\n## 一、核心内容要点\n1. 【背景与意义】简述研究背景，阐述理论意义和实践价值\n2. 【文献综述】梳理国内外研究现状，找出研究空白\n3. 【研究内容】明确本文要研究的具体问题\n4. 【技术路线】展示研究方法和步骤\n\n## 二、写作格式要求\n- 字数：${chapterConfig[state.currentChapter - 1]?.minWords || 4000}字以上\n- 层次分明，逻辑清晰\n- 适当引用文献（建议引用素材库中的文献）\n\n## 三、注意事项\n⚠️ 避免空洞论述，要有具体内容支撑\n⚠️ 引用要规范，注明出处\n⚠️ 可使用素材库中的参考文献`,
+        '撰写': `【${chapterConfig[state.currentChapter - 1]?.name || '第1章'}内容占位符】\n\n此处将通过AI模型生成完整的章节内容。\n\n请确保：\n1. 已配置有效的API Key\n2. 已生成写作要求\n3. 可使用素材库中的参考文献进行引用\n\n当前章节：${chapterConfig[state.currentChapter - 1]?.name || '第1章'}\n建议字数：${chapterConfig[state.currentChapter - 1]?.minWords || 4000}+字`,
+        '优化': '【优化完成】\n\n✓ 已优化学术表达\n✓ 已统一专业术语\n✓ 已修正逻辑衔接\n✓ 已精简冗余内容'
+    };
+    
+    for (const [key, value] of Object.entries(responses)) {
+        if (topic.includes(key)) return value;
+    }
+    return responses['优化'];
+}
+
+// ==================== 步骤1功能：开题报告 ====================
+async function analyzeOpeningReport() {
+    const content = document.getElementById('openingReport').value.trim();
+    if (!content) {
+        alert('请输入或上传开题报告内容！');
+        return;
+    }
+    
+    showLoading('AI正在分析开题报告...');
+    
+    const systemPrompt = `你是一位资深的MEM（工程管理硕士）论文指导教授。请分析用户提供的开题报告，从以下四个维度进行评分（满分100）：
+1. 逻辑完整性：研究背景→研究目标→技术路线是否连贯
+2. 研究可行性：研究内容是否可行，方法是否恰当
+3. 创新点明确度：创新点是否清晰、有价值
+4. MEM规范符合：是否符合MEM学位论文标准
+
+请用JSON格式输出评分和分析建议。`;
+    
+    const result = await callAI(systemPrompt, `请分析以下MEM开题报告：\n\n${content.substring(0, 3000)}`);
+    
+    hideLoading();
+    
+    // 尝试解析评分
+    try {
+        const match = result.match(/\{[\s\S]*\}/);
+        if (match) {
+            const scores = JSON.parse(match[0]);
+            document.getElementById('scoreLogic').textContent = scores.逻辑完整性 || '--';
+            document.getElementById('scoreFeasibility').textContent = scores.研究可行性 || '--';
+            document.getElementById('scoreInnovation').textContent = scores.创新点明确度 || '--';
+            document.getElementById('scoreStandard').textContent = scores.MEM规范符合 || '--';
+        }
+    } catch(e) {}
+    
+    document.getElementById('analyzeResult').innerHTML = `<pre class="whitespace-pre-wrap text-sm">${escapeHtml(result)}</pre>`;
+}
+
+async function extractResearchFramework() {
+    const content = document.getElementById('openingReport').value.trim();
+    if (!content) {
+        alert('请先输入开题报告内容！');
+        return;
+    }
+    
+    showLoading('正在提取研究框架...');
+    
+    const systemPrompt = `你是一位资深的MEM论文指导教授。请从用户提供的开题报告中提取：
+1. 核心关键词（3-5个）
+2. 研究主线/理论框架
+3. 研究逻辑链条
+
+请用清晰的格式输出。`;
+    
+    const result = await callAI(systemPrompt, `提取以下开题报告的研究框架：\n\n${content.substring(0, 3000)}`);
+    
+    hideLoading();
+    // 保存研究主题
+    const topicMatch = result.match(/核心关键词[：:]\s*([^\n]+)/);
+    if (topicMatch) {
+        state.researchTopic = topicMatch[1].trim();
+        saveState();
+    }
+    document.getElementById('researchFramework').innerHTML = `<div class="text-sm">${escapeHtml(result).replace(/\n/g, '<br>')}</div>`;
+    updateResearchTopicDisplay();
+}
+
+function clearOpeningReport() {
+    document.getElementById('openingReport').value = '';
+    document.getElementById('fileInput').value = '';
+    document.getElementById('fileStatus').textContent = '未选择文件';
+    document.getElementById('fileStatus').className = 'text-sm text-gray-500 mt-2';
+    document.getElementById('analyzeResult').innerHTML = '<p class="text-sm text-gray-500">分析结果将在此展示</p>';
+    document.getElementById('researchFramework').innerHTML = '<p class="text-sm text-gray-600">点击"提取关键词"后显示</p>';
+    document.getElementById('scoreLogic').textContent = '--';
+    document.getElementById('scoreFeasibility').textContent = '--';
+    document.getElementById('scoreInnovation').textContent = '--';
+    document.getElementById('scoreStandard').textContent = '--';
+}
+
+// HTML转义函数，防止XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ==================== 步骤2功能：大纲 ====================
+function selectTemplate(template, event) {
+    document.querySelectorAll('.template-btn').forEach(btn => {
+        btn.classList.remove('active', 'bg-academic', 'text-white');
+    });
+    
+    const targetBtn = document.querySelector(`.template-btn[data-template="${template}"]`);
+    if (targetBtn) {
+        targetBtn.classList.add('active', 'bg-academic', 'text-white');
+    }
+    
+    if (template === 'custom') {
+        document.getElementById('paperOutline').value = '';
+    } else {
+        document.getElementById('paperOutline').value = outlineTemplates[template] || outlineTemplates.standard;
+    }
+    state.outline = document.getElementById('paperOutline').value;
+    updateOutlinePreview();
+}
+
+async function generateOutline() {
+    showLoading('AI正在生成大纲...');
+    
+    const systemPrompt = `你是一位资深的MEM论文指导教授。请根据用户提供的开题报告，生成一份符合MEM学位论文标准的详细大纲。
+
+MEM论文标准结构包括：
+- 第1章 绪论（研究背景、意义、国内外现状、研究内容、技术路线）
+- 第2章 理论基础与文献综述
+- 第3章 研究设计
+- 第4章 实证分析
+- 第5章 结论与展望
+
+请生成详细的三级大纲，格式规范。`;
+    
+    const content = document.getElementById('openingReport').value.trim();
+    const userPrompt = content ? 
+        `基于以下开题报告生成论文大纲：\n\n${content.substring(0, 3000)}` :
+        `请生成一份标准MEM论文大纲模板`;
+    
+    const result = await callAI(systemPrompt, userPrompt);
+    
+    hideLoading();
+    document.getElementById('paperOutline').value = result;
+    state.outline = result;
+    updateOutlinePreview();
+}
+
+async function optimizeOutline() {
+    const outline = document.getElementById('paperOutline').value.trim();
+    if (!outline) {
+        alert('请先生成大纲！');
+        return;
+    }
+    
+    showLoading('AI正在优化大纲...');
+    
+    const systemPrompt = `你是MEM论文写作专家。请优化以下论文大纲，使其：
+1. 结构更合理、逻辑更清晰
+2. 各章节内容更充实、深度更适中
+3. 符合MEM学位论文规范
+4. 各部分字数分配合理
+
+直接输出优化后的大纲，不需要解释。`;
+    
+    const result = await callAI(systemPrompt, `优化以下大纲：\n\n${outline}`);
+    
+    hideLoading();
+    document.getElementById('paperOutline').value = result;
+    state.outline = result;
+    updateOutlinePreview();
+}
+
+function updateOutlinePreview() {
+    const outline = document.getElementById('paperOutline').value;
+    const preview = document.getElementById('outlinePreview');
+    
+    if (!outline) {
+        preview.innerHTML = '<p class="text-gray-500 text-sm">点击"AI生成大纲"后预览</p>';
+        return;
+    }
+    
+    const lines = outline.split('\n').filter(l => l.trim());
+    let html = '<div class="space-y-2">';
+    
+    lines.forEach(line => {
+        const trimmed = line.trim();
+        if (/^第[一二三四五六七八九十]+章/.test(trimmed)) {
+            html += `<div class="font-bold text-academic mt-3 flex items-center"><i class="fas fa-book mr-2"></i>${escapeHtml(trimmed)}</div>`;
+        } else if (/^\d+\.\d+/.test(trimmed)) {
+            html += `<div class="pl-6 text-sm text-gray-700 flex items-center"><i class="fas fa-minus mr-2 text-gray-400"></i>${escapeHtml(trimmed)}</div>`;
+        } else if (/^\d+\.\d+\.\d+/.test(trimmed)) {
+            html += `<div class="pl-10 text-sm text-gray-600 flex items-center"><span class="w-2 h-2 bg-gray-300 rounded-full mr-2"></span>${escapeHtml(trimmed)}</div>`;
+        } else if (trimmed) {
+            html += `<div class="pl-4 text-sm text-gray-600">${escapeHtml(trimmed)}</div>`;
+        }
+    });
+    
+    html += '</div>';
+    preview.innerHTML = html;
+}
+
+function confirmOutline() {
+    const outline = document.getElementById('paperOutline').value.trim();
+    if (!outline) {
+        alert('请先生成大纲！');
+        return;
+    }
+    state.outline = outline;
+    saveState();
+    initStep(3);
+    switchChapter(1);
+}
+
+// ==================== 步骤3功能：章节撰写 ====================
+function switchChapter(chapterId) {
+    // 保存当前章节
+    if (state.currentChapter !== chapterId) {
+        const currentContent = document.getElementById('chapterContent').value;
+        if (currentContent && currentContent.trim()) {
+            state.chapters[state.currentChapter] = currentContent;
+            saveState();
+        }
+    }
+    
+    state.currentChapter = chapterId;
+    const chapter = chapterConfig.find(c => c.id === chapterId);
+    
+    // 更新UI
+    document.querySelectorAll('.chapter-card').forEach(card => {
+        const isActive = parseInt(card.dataset.chapter) === chapterId;
+        card.classList.toggle('active', isActive);
+    });
+    
+    document.getElementById('currentChapterTitle').textContent = chapter.name;
+    document.getElementById('chapterTargetWords').textContent = `建议字数：${chapter.minWords}+字`;
+    
+    // 更新写作提示
+    document.getElementById('hintTitle').textContent = `${chapter.name}写作要点：`;
+    document.getElementById('hintList').innerHTML = chapter.tips.map(t => `<li>${escapeHtml(t)}</li>`).join('');
+    
+    // 加载已保存内容
+    const savedContent = state.chapters[chapterId] || '';
+    document.getElementById('chapterContent').value = savedContent;
+    updateWordCount();
+    updateChapterStatus();
+    updateChapterStatusGlobal();
+}
+
+function updateWordCount() {
+    const content = document.getElementById('chapterContent').value;
+    const words = content.replace(/\s/g, '').length;
+    document.getElementById('contentWordCount').textContent = `${words} 字`;
+    document.getElementById('chapterWordCount').textContent = `${words} 字`;
+}
+
+function updateChapterStatus() {
+    const content = document.getElementById('chapterContent').value;
+    const chapter = chapterConfig.find(c => c.id === state.currentChapter);
+    
+    const status = document.getElementById('chapterStatus');
+    if (content.length > chapter.minWords) {
+        status.textContent = '已完成';
+        status.className = 'px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs';
+    } else if (content.length > 100) {
+        status.textContent = '进行中';
+        status.className = 'px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs';
+    } else {
+        status.textContent = '未开始';
+        status.className = 'px-3 py-1 bg-gray-100 rounded-full text-xs';
+    }
+    
+    // 更新章节列表状态
+    const card = document.querySelector(`.chapter-card[data-chapter="${state.currentChapter}"]`);
+    if (card) {
+        card.querySelector('.chapter-status').textContent = content.length > 100 ? '进行中' : '未开始';
+        card.querySelector('.chapter-words').textContent = `${content.replace(/\s/g, '').length}字`;
+    }
+}
+
+function updateChapterStatusGlobal() {
+    Object.keys(state.chapters).forEach(chId => {
+        const card = document.querySelector(`.chapter-card[data-chapter="${chId}"]`);
+        if (card && state.chapters[chId]) {
+            const words = state.chapters[chId].replace(/\s/g, '').length;
+            const chapter = chapterConfig.find(c => c.id === parseInt(chId));
+            if (chapter && words > chapter.minWords) {
+                card.classList.add('completed');
+                card.querySelector('.chapter-status').textContent = '已完成';
+                card.querySelector('.chapter-status').className = 'chapter-status text-xs text-green-600';
+            } else if (words > 100) {
+                card.querySelector('.chapter-status').textContent = '进行中';
+                card.querySelector('.chapter-status').className = 'chapter-status text-xs text-yellow-600';
+            }
+            card.querySelector('.chapter-words').textContent = `${words}字`;
+        }
+    });
+}
+
+async function generateRequirements() {
+    const topic = state.researchTopic || '工程管理研究';
+    const chapter = chapterConfig.find(c => c.id === state.currentChapter);
+    
+    showLoading('AI正在生成写作要求...');
+
+    const systemPrompt = `你是一位资深的MEM（工程管理硕士）论文导师。请根据研究主题和当前章节，生成一份详细的写作要求清单。
+
+要求：
+1. 明确该章节的核心内容要点
+2. 给出写作格式和字数要求
+3. 提示常见问题和注意事项
+4. 提示可以引用素材库中的哪些文献
+
+格式要求：
+- 使用清晰的markdown格式
+- 分类列出，不要长篇大论
+- 每项要求简洁明了`;
+
+    const userPrompt = `研究主题：${topic}
+当前章节：${chapter.name}
+章节简介：${chapter.tips}
+建议字数：${chapter.minWords}字以上
+
+请生成该章节的写作要求。`;
+
+    const result = await callAI(systemPrompt, userPrompt);
+    
+    hideLoading();
+    document.getElementById('writingRequirements').value = result;
+    state.requirements = result;
+}
+
+async function startWriting() {
+    const requirements = document.getElementById('writingRequirements').value.trim();
+    const chapter = chapterConfig.find(c => c.id === state.currentChapter);
+    
+    // 构建素材引用提示 - 包含完整文献内容
+    let materialRefHint = '';
+    const docMaterials = state.materials.filter(m => m.type === 'document');
+    if (docMaterials.length > 0) {
+        materialRefHint = `\n\n## 素材库参考文献\n请在撰写时引用以下文献（使用GB/T 7714格式）：\n\n`;
+        docMaterials.slice(0, 10).forEach((m, i) => {
+            // 提取文献的关键引用信息（前200字）
+            const content = m.content ? m.content.substring(0, 200) : (m.analysis || '');
+            materialRefHint += `【文献${i+1}】${escapeHtml(m.name)}\n内容：${content.substring(0, 150)}\n\n`;
+        });
+        materialRefHint += `\n请在正文中适当位置引用这些文献，使用GB/T 7714格式（如：张三等[2020]或[1]）。`;
+    } else {
+        materialRefHint = `\n\n注意：请在撰写完成后，在素材库中添加相关参考文献，并在正文中进行引用。`;
+    }
+
+    showLoading('AI正在撰写章节内容，请稍候...');
+
+    const systemPrompt = `你是一位资深的MEM工程管理硕士论文导师。请根据以下要求，撰写完整的论文章节内容。
+
+写作要求：
+1. 严格遵循学术论文写作规范
+2. 使用正式的学术语言
+3. 内容充实，论证严密
+4. 适当引用相关理论和文献（必须引用下面的素材库文献）
+5. 给出具体的数据或案例支撑（可用[待补充]标注需要实际数据的地方）
+6. 章节结构清晰，层次分明
+
+引用要求：
+- 必须在正文中引用素材库中的参考文献
+- 使用GB/T 7714格式（如：张三等[2020]或[1]）
+- 参考文献列表放在章节末尾
+
+注意：
+- 不要使用"我认为"、"众所周知"等主观表达
+- 尽量使用"本文"、"本研究"等客观表述
+- 专业术语使用准确
+- 适当使用过渡句连接各段落`;
+
+    const userPrompt = `研究主题：${state.researchTopic || '工程管理研究'}
+当前章节：${chapter.name}
+写作要求：
+${requirements}
+${materialRefHint}
+
+请撰写完整的${chapter.name}内容，字数要求${chapter.minWords}字以上。
+请在正文中适当引用上述素材库中的文献。`;
+
+    const result = await callAI(systemPrompt, userPrompt);
+    
+    hideLoading();
+    document.getElementById('chapterContent').value = result;
+    updateWordCount();
+    updateChapterStatus();
+    updateChapterStatusGlobal();
+    updateProgress();
+}
+
+async function polishContent() {
+    const content = document.getElementById('chapterContent').value.trim();
+    if (!content) {
+        alert('章节内容为空！');
+        return;
+    }
+    
+    showLoading('AI正在润色内容...');
+    
+    const systemPrompt = `你是中文学术论文润色专家。请优化以下论文内容：
+1. 提升学术表达规范性
+2. 修正语法错误
+3. 优化逻辑衔接
+4. 精简冗余表达
+5. 保持原意不变
+
+直接输出润色后的内容，不要添加任何说明。`;
+    
+    const result = await callAI(systemPrompt, `请润色以下内容：\n\n${content}`);
+    
+    hideLoading();
+    document.getElementById('chapterContent').value = result;
+    updateWordCount();
+}
+
+function saveChapterContent() {
+    const content = document.getElementById('chapterContent').value;
+    if (!content.trim()) {
+        alert('章节内容为空，请先撰写内容！');
+        return;
+    }
+    
+    state.chapters[state.currentChapter] = content;
+    saveState();
+    updateChapterStatus();
+    updateChapterStatusGlobal();
+    updateProgress();
+    updatePaperPreview();
+    alert('章节内容已保存！');
+}
+
+function nextChapter() {
+    // 先保存当前内容
+    const content = document.getElementById('chapterContent').value;
+    if (content.trim()) {
+        state.chapters[state.currentChapter] = content;
+        saveState();
+    }
+    
+    if (state.currentChapter < chapterConfig.length) {
+        switchChapter(state.currentChapter + 1);
+    } else {
+        if (confirm('已是最后一章，是否进入论文优化阶段？')) {
+            initStep(4);
+            updatePaperPreview();
+        }
+    }
+}
+
+// ==================== 素材库管理（全局：针对整篇论文）==================
+function openMaterialPool() {
+    document.getElementById('materialModal').classList.remove('hidden');
+    renderMaterialListFull('all');
+}
+
+function closeMaterialPool() {
+    document.getElementById('materialModal').classList.add('hidden');
+}
+
+async function handleMaterialUpload(files) {
+    if (!files || files.length === 0) return;
+    
+    showLoading('AI正在解析文件...');
+    document.getElementById('uploadProgress').classList.remove('hidden');
+
+    for (const file of files) {
+        try {
+            let text = '';
+            let type = 'document';
+
+            if (file.name.endsWith('.pdf')) {
+                text = await extractTextFromPDF(file);
+            } else if (file.name.endsWith('.docx')) {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer });
+                text = result.value;
+            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                const data = await parseExcel(file);
+                text = JSON.stringify(data, null, 2);
+                type = 'data';
+            } else if (file.name.endsWith('.txt')) {
+                text = await file.text();
+            } else {
+                continue;
+            }
+
+            // AI分析素材
+            const analysis = await analyzeMaterial(text, file.name, type);
+            
+            const material = {
+                id: Date.now() + Math.random(),
+                name: file.name,
+                type: type,
+                content: text.substring(0, 2000),
+                analysis: analysis,
+                createdAt: new Date().toLocaleString()
+            };
+
+            state.materials.push(material);
+        } catch (err) {
+            console.error(err);
+            alert(`文件 "${file.name}" 处理失败：${err.message}`);
+        }
+    }
+
+    saveState();
+    hideLoading();
+    document.getElementById('uploadProgress').classList.add('hidden');
+    updateMaterialStats();
+    renderMaterialListMini();
+    renderMaterialListFull('all');
+}
+
+async function parseExcel(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { header: 1 });
+}
+
+async function analyzeMaterial(text, filename, type) {
+    const prompt = `请分析以下素材内容，提取关键信息：
+
+文件名：${filename}
+素材类型：${type}
+
+内容：
+${text.substring(0, 1500)}
+
+请用简洁的格式输出：
+1. 【核心主题】一句话概括
+2. 【关键数据/结论】列出2-3个
+3. 【可用于】可以用于论文哪个部分`;
+
+    return await callAI('你是一位学术资料分析专家。请简洁地分析素材的关键信息。', prompt);
+}
+
+async function addPasteMaterial() {
+    const content = document.getElementById('pasteContent').value.trim();
+    if (!content) {
+        alert('请输入素材内容！');
+        return;
+    }
+
+    const type = document.getElementById('materialType').value;
+    
+    showLoading('AI正在分析素材...');
+    const analysis = await analyzeMaterial(content, '粘贴内容', type);
+    hideLoading();
+
+    const material = {
+        id: Date.now() + Math.random(),
+        name: `粘贴素材_${new Date().toLocaleDateString()}`,
+        type: type,
+        content: content.substring(0, 2000),
+        analysis: analysis,
+        createdAt: new Date().toLocaleString()
+    };
+
+    state.materials.push(material);
+    saveState();
+    
+    document.getElementById('pasteContent').value = '';
+    closePasteMaterialModal();
+    updateMaterialStats();
+    renderMaterialListMini();
+    renderMaterialListFull('all');
+    
+    alert('素材已添加！');
+}
+
+async function aiGenerateMaterial() {
+    const input = document.getElementById('aiGenerateInput').value.trim();
+    if (!input) {
+        alert('请描述需要什么类型的素材！');
+        return;
+    }
+
+    document.getElementById('aiGenerateProgress').classList.remove('hidden');
+    document.getElementById('aiGenerateMaterialBtn').disabled = true;
+
+    const prompt = `请根据以下需求，生成适合MEM论文使用的素材内容：
+
+需求：${input}
+研究主题：${state.researchTopic || '工程管理'}
+
+请生成：
+1. 3-5条相关文献引用（使用GB/T 7714格式，包含作者、题名、刊名、年份、页码）
+2. 1-2个典型案例描述
+3. 2-3组示例数据（如果有相关）
+4. 1个理论框架或分析模型
+
+确保内容专业、真实、可用于学术论文。`;
+
+    const result = await callAI('你是一位资深的MEM论文导师。请生成适合论文使用的素材。', prompt);
+
+    const material = {
+        id: Date.now() + Math.random(),
+        name: `AI生成素材_${input.substring(0, 20)}`,
+        type: 'document',
+        content: result,
+        analysis: '由AI根据需求自动生成，主要为参考文献',
+        createdAt: new Date().toLocaleString()
+    };
+
+    state.materials.push(material);
+    saveState();
+
+    document.getElementById('aiGenerateProgress').classList.add('hidden');
+    document.getElementById('aiGenerateMaterialBtn').disabled = false;
+    document.getElementById('aiGenerateInput').value = '';
+    closeAiGenerateModal();
+    
+    updateMaterialStats();
+    renderMaterialListMini();
+    renderMaterialListFull('all');
+    
+    alert('AI素材已生成！');
+}
+
+function updateMaterialStats() {
+    const docs = state.materials.filter(m => m.type === 'document').length;
+    const datas = state.materials.filter(m => m.type === 'data').length;
+    const cases = state.materials.filter(m => m.type === 'case').length;
+    
+    document.getElementById('docCount').textContent = docs;
+    document.getElementById('dataCount').textContent = datas;
+    document.getElementById('caseCount').textContent = cases;
+}
+
+function renderMaterialListMini() {
+    const list = document.getElementById('materialListMini');
+    if (state.materials.length === 0) {
+        list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">暂无素材</p>';
+        return;
+    }
+    
+    list.innerHTML = state.materials.slice(0, 3).map(m => `
+        <div class="p-2 bg-gray-50 rounded text-xs">
+            <div class="flex items-center gap-1">
+                <i class="fas ${m.type === 'document' ? 'fa-file-alt' : m.type === 'data' ? 'fa-database' : 'fa-book'} text-gray-400"></i>
+                <span class="truncate">${escapeHtml(m.name)}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderMaterialListFull(filter) {
+    const list = document.getElementById('materialListFull');
+    let materials = state.materials;
+    
+    if (filter !== 'all') {
+        materials = materials.filter(m => m.type === filter);
+    }
+    
+    // 更新筛选按钮状态
+    document.querySelectorAll('.material-filter').forEach(btn => {
+        btn.classList.remove('bg-academic', 'text-white');
+        if (btn.textContent.trim() === (filter === 'all' ? '全部' : filter === 'document' ? '文献' : filter === 'data' ? '数据' : '案例')) {
+            btn.classList.add('bg-academic', 'text-white');
+        }
+    });
+    
+    if (materials.length === 0) {
+        list.innerHTML = '<p class="text-center text-gray-500 py-8">暂无素材</p>';
+        return;
+    }
+    
+    list.innerHTML = materials.map(m => `
+        <div class="p-3 border rounded-lg mb-2 hover:bg-gray-50">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="px-2 py-0.5 text-xs rounded ${m.type === 'document' ? 'bg-blue-100 text-blue-700' : m.type === 'data' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}">
+                            ${m.type === 'document' ? '文献' : m.type === 'data' ? '数据' : '案例'}
+                        </span>
+                        <span class="font-medium text-sm">${escapeHtml(m.name)}</span>
+                    </div>
+                    <p class="text-xs text-gray-600 line-clamp-2">${escapeHtml(m.analysis || m.content.substring(0, 100))}</p>
+                    <p class="text-xs text-gray-400 mt-1">${m.createdAt}</p>
+                </div>
+                <button onclick="deleteMaterial(${m.id})" class="text-red-500 hover:text-red-700 p-1">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function deleteMaterial(id) {
+    if (confirm('确定删除该素材吗？')) {
+        state.materials = state.materials.filter(m => m.id !== id);
+        saveState();
+        updateMaterialStats();
+        renderMaterialListMini();
+        renderMaterialListFull('all');
+    }
+}
+
+// ==================== 参考文献插入功能 ====================
+function openReferenceModal() {
+    document.getElementById('referenceModal').classList.remove('hidden');
+    renderReferenceList();
+}
+
+function closeReferenceModal() {
+    document.getElementById('referenceModal').classList.add('hidden');
+}
+
+function renderReferenceList() {
+    const list = document.getElementById('referenceList');
+    const docMaterials = state.materials.filter(m => m.type === 'document');
+    
+    if (docMaterials.length === 0) {
+        list.innerHTML = '<p class="text-gray-500 text-sm">暂无文献素材，请先在素材库中添加文献</p>';
+        return;
+    }
+    
+    list.innerHTML = docMaterials.map((m, i) => `
+        <div class="p-3 border rounded hover:bg-gray-50 cursor-pointer" onclick="insertReference(${m.id})">
+            <div class="flex items-center gap-2">
+                <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">[${i + 1}]</span>
+                <span class="text-sm">${escapeHtml(m.name)}</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-1 line-clamp-2">${escapeHtml(m.content.substring(0, 100))}</p>
+        </div>
+    `).join('');
+}
+
+function insertReference(materialId) {
+    const material = state.materials.find(m => m.id === materialId);
+    if (!material) return;
+    
+    // 生成引用格式 - 使用标准GB/T 7714格式
+    const index = state.materials.filter(m => m.type === 'document').indexOf(material) + 1;
+    const citation = `[${index}]`;
+    
+    // 插入到内容中
+    const contentArea = document.getElementById('chapterContent');
+    const start = contentArea.selectionStart;
+    const end = contentArea.selectionEnd;
+    const text = contentArea.value;
+    
+    contentArea.value = text.substring(0, start) + citation + text.substring(end);
+    contentArea.focus();
+    contentArea.setSelectionRange(start + citation.length, start + citation.length);
+    
+    updateWordCount();
+    closeReferenceModal();
+    alert(`已插入文献引用 [${index}]\n\n文件名：${material.name}\n\n导出时会自动生成完整的GB/T 7714格式引用。`);
+}
+
+// ==================== 步骤4功能：检查与优化 ====================
+async function checkPaper(type) {
+    const results = document.getElementById('checkResults');
+    const allContent = Object.values(state.chapters).join('\n\n');
+    
+    if (!allContent.trim()) {
+        alert('请先撰写章节内容！');
+        return;
+    }
+    
+    showLoading('AI正在检查...');
+    
+    let systemPrompt, userPrompt;
+    
+    switch(type) {
+        case 'logic':
+            systemPrompt = '请检查论文的逻辑一致性，找出逻辑矛盾或跳跃的地方。';
+            userPrompt = `检查以下论文的逻辑一致性：\n\n${allContent.substring(0, 3000)}`;
+            break;
+        case 'format':
+            systemPrompt = '请检查论文格式是否符合学术规范，包括标题层级、段落格式、图表标注等。';
+            userPrompt = `检查以下论文的格式规范：\n\n${allContent.substring(0, 3000)}`;
+            break;
+        case 'citation':
+            systemPrompt = '请检查文献引用是否规范，是否存在未标注引用或格式错误的问题。';
+            userPrompt = `检查以下论文的文献引用（注意素材库中的文献）：\n\n${allContent.substring(0, 3000)}`;
+            break;
+        case 'plagiarism':
+            systemPrompt = '请预估论文的重复率风险，给出修改建议。';
+            userPrompt = `预估以下论文的重复率：\n\n${allContent.substring(0, 3000)}`;
+            break;
+    }
+    
+    const result = await callAI(systemPrompt, userPrompt);
+    hideLoading();
+    
+    results.innerHTML = `<pre class="whitespace-pre-wrap text-sm">${escapeHtml(result)}</pre>`;
+}
+
+async function optimizePaper(type) {
+    const resultArea = document.getElementById('optimizeResult');
+    const allContent = Object.values(state.chapters).join('\n\n');
+    
+    if (!allContent.trim()) {
+        alert('请先撰写章节内容！');
+        return;
+    }
+    
+    showLoading('AI正在优化...');
+    
+    let systemPrompt, userPrompt;
+    
+    switch(type) {
+        case 'academic':
+            systemPrompt = '请优化学术表达，使语言更加规范、专业。';
+            userPrompt = `优化以下论文的学术表达：\n\n${allContent.substring(0, 3000)}`;
+            break;
+        case 'coherence':
+            systemPrompt = '请优化段落之间的衔接过渡，使文章更流畅。';
+            userPrompt = `优化以下论文的衔接过渡：\n\n${allContent.substring(0, 3000)}`;
+            break;
+        case 'terminology':
+            systemPrompt = '请统一专业术语的使用，确保术语一致性。';
+            userPrompt = `统一以下论文的术语：\n\n${allContent.substring(0, 3000)}`;
+            break;
+        case 'concise':
+            systemPrompt = '请精简冗余表达，去除重复内容。';
+            userPrompt = `精简以下论文的冗余内容：\n\n${allContent.substring(0, 3000)}`;
+            break;
+    }
+    
+    const result = await callAI(systemPrompt, userPrompt);
+    hideLoading();
+    
+    resultArea.innerHTML = `<pre class="whitespace-pre-wrap text-sm">${escapeHtml(result)}</pre>`;
+}
+
+function updatePaperPreview() {
+    const preview = document.getElementById('paperPreview');
+    let html = '';
+    
+    chapterConfig.forEach((ch, index) => {
+        const content = state.chapters[ch.id] || '';
+        if (content) {
+            html += `<div class="mb-4">
+                <h3 class="font-bold text-academic mb-2">${escapeHtml(ch.name)}</h3>
+                <div class="text-sm text-gray-700 whitespace-pre-wrap">${escapeHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</div>
+            </div>`;
+        }
+    });
+    
+    if (!html) {
+        html = '<p class="text-sm text-gray-500">保存章节后在此预览完整论文</p>';
+    }
+    
+    preview.innerHTML = html;
+    
+    // 更新统计
+    const totalWords = Object.values(state.chapters).reduce((sum, c) => sum + c.replace(/\s/g, '').length, 0);
+    document.getElementById('totalWordCount').textContent = totalWords;
+    document.getElementById('chapterCount').textContent = Object.keys(state.chapters).length;
+    document.getElementById('completionRate').textContent = Math.round((totalWords / 30000) * 100) + '%';
+}
+
+function updateProgress() {
+    const totalWords = Object.values(state.chapters).reduce((sum, c) => sum + c.replace(/\s/g, '').length, 0);
+    const percent = Math.min(Math.round((totalWords / 30000) * 100), 100);
+    
+    document.getElementById('progressPercent').textContent = percent + '%';
+    document.getElementById('progressFill').style.width = percent + '%';
+    document.getElementById('completedWords').textContent = totalWords;
+    document.getElementById('wordProgress').textContent = percent + '%';
+}
+
+// ==================== 导出功能 ====================
+
+// 生成参考文献列表
+function generateReferenceList() {
+    const docMaterials = state.materials.filter(m => m.type === 'document');
+    let refs = [];
+    
+    if (docMaterials.length > 0) {
+        docMaterials.forEach((m, i) => {
+            // 尝试从内容中提取GB/T 7714格式的引用
+            let refContent = m.content || m.analysis || m.name;
+            // 如果内容不是标准引用格式，生成一个标准格式
+            if (!refContent.match(/\[?\d+\]?\.\s*\w+/)) {
+                refContent = `[${i + 1}] ${m.name}. ${refContent.substring(0, 200)}`;
+            }
+            refs.push(refContent);
+        });
+    }
+    
+    return refs;
+}
+
+async function exportToWord() {
+    showLoading('正在生成Word文档...');
+    
+    try {
+        // 构建完整论文内容
+        let docContent = `# ${state.researchTopic || 'MEM学位论文'}\n\n`;
+        
+        // 添加摘要占位符
+        docContent += `## 摘要\n\n[在此添加中文摘要]\n\n关键词：\n\n## Abstract\n\n[在此添加英文摘要]\n\nKeywords:\n\n`;
+        
+        // 添加各章节
+        chapterConfig.forEach(ch => {
+            const content = state.chapters[ch.id] || '';
+            docContent += `## ${ch.name}\n\n${content || '[待撰写]'}\n\n`;
+        });
+        
+        // 添加参考文献 - 自动从素材库整合
+        const refs = generateReferenceList();
+        docContent += `\n## 参考文献\n\n`;
+        if (refs.length > 0) {
+            refs.forEach((ref, i) => {
+                docContent += `${ref}\n\n`;
+            });
+            docContent += `\n---参考文献总计：${refs.length}篇（均来自素材库）---\n`;
+        } else {
+            docContent += `[请在素材库中添加参考文献]\n\n`;
+        }
+        
+        // 添加附录提示
+        docContent += `\n## 附录\n\n[如有需要，在此添加补充材料]\n`;
+        
+        // 导出为纯文本文件（带.docx扩展名提示用户用Word打开）
+        const blob = new Blob([docContent], { type: 'text/plain;charset=utf-8' });
+        saveAs(blob, 'MEM学位论文.txt');
+        
+        hideLoading();
+        alert('Word文档内容已导出！\n\n请使用Word打开生成的.txt文件，然后另存为.docx格式。\n\n参考文献已自动从素材库整合，共' + refs.length + '条。');
+    } catch (err) {
+        hideLoading();
+        alert('导出失败：' + err.message);
+    }
+}
+
+function exportToPDF() {
+    alert('PDF导出功能说明：\n\n1. 推荐方法：导出Word后，用Word"另存为"PDF\n2. 或使用浏览器打印功能：Ctrl+P → 打印为PDF\n\n这是因为浏览器安全限制，无法直接生成高质量PDF。');
+}
+
+function exportToTxt() {
+    let content = '';
+    
+    chapterConfig.forEach(ch => {
+        const chapterContent = state.chapters[ch.id] || '';
+        content += `${ch.name}\n\n${chapterContent}\n\n`;
+    });
+    
+    // 添加参考文献
+    const refs = generateReferenceList();
+    if (refs.length > 0) {
+        content += '\n参考文献\n\n';
+        refs.forEach((ref, i) => {
+            content += `${ref}\n\n`;
+        });
+    }
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    saveAs(blob, 'MEM学位论文.txt');
+    alert('文本文件已导出！\n参考文献共' + refs.length + '条。');
+}
+
+function exportToMarkdown() {
+    let content = `# ${state.researchTopic || 'MEM学位论文'}\n\n`;
+    
+    chapterConfig.forEach(ch => {
+        const chapterContent = state.chapters[ch.id] || '';
+        content += `## ${ch.name}\n\n${chapterContent}\n\n`;
+    });
+    
+    // 参考文献 - 自动从素材库整合
+    const refs = generateReferenceList();
+    content += `\n## 参考文献\n\n`;
+    if (refs.length > 0) {
+        refs.forEach((ref, i) => {
+            content += `${ref}\n\n`;
+        });
+        content += `\n> 参考文献总计：${refs.length}篇（均来自素材库）\n`;
+    } else {
+        content += `[请在素材库中添加参考文献]\n\n`;
+    }
+    
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    saveAs(blob, 'MEM学位论文.md');
+    alert('Markdown文件已导出！\n参考文献已自动从素材库整合，共' + refs.length + '条。');
+}
+</script>
+</body>
+</html>
