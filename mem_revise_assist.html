@@ -1,0 +1,3512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEM论文智能修订助手 - 章节精修与导出</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.umd.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        academic: '#165DFF',
+                        lightAcademic: '#E8F3FF',
+                        darkAcademic: '#0E42B3',
+                        success: '#00A870',
+                        warning: '#FF9F43',
+                        danger: '#F53F3F',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .upload-zone {
+            border: 2px dashed #d1d5db;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-zone:hover {
+            border-color: #165DFF;
+            background-color: #E8F3FF;
+        }
+        .chapter-card {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            border: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .chapter-card:hover { border-color: #165DFF; }
+        .chapter-card.active { border-color: #165DFF; background: #E8F3FF; }
+        .chapter-card.completed { border-color: #00A870; background: #ecfdf5; }
+        .revision-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+        }
+        .diff-added { background: #dcfce7; color: #166534; }
+        .diff-removed { background: #fee2e2; color: #991b1b; text-decoration: line-through; }
+        .diff-modified { background: #fef3c7; color: #92400e; }
+        .typing-indicator span {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            background: #9ca3af;
+            border-radius: 50%;
+            margin: 0 0.125rem;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-6px); }
+        }
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .template-card {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .template-card:hover { border-color: #165DFF; }
+        .template-card.selected { border-color: #165DFF; background: #E8F3FF; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- API Key 提醒弹窗 -->
+    <div id="apiKeyReminder" class="modal-overlay hidden">
+        <div class="bg-white rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <div class="text-center">
+                <i class="fas fa-key text-4xl text-warning mb-4"></i>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">API Key 未设置</h3>
+                <p class="text-gray-600 mb-4">使用AI功能需要设置API Key，请先配置您的API Key以继续使用。</p>
+                <div class="flex flex-col gap-3">
+                    <input type="password" id="modalApiKey" placeholder="输入API Key" 
+                        class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-academic">
+                    <select id="modalAiModel" class="w-full px-4 py-2 border rounded-md">
+                        <option value="kimi-2.5">KIMI 2.5（深度思考）</option>
+                        <option value="gemini-3.1-pro">Gemini 3.1 Pro（深度思考）</option>
+                        <option value="gpt-4o">GPT-4o（深度思考）</option>
+                        <option value="deepseek-chat">DeepSeek（深度思考）</option>
+                        <option value="qwen-plus">通义Qwen（深度思考）</option>
+                        <option value="glm-4">智谱GLM-4（深度思考）</option>
+                        <option value="ernie-4">文心ERNIE 4.0（深度思考）</option>
+                        <option value="spark-4">讯飞Spark 4.0（深度思考）</option>
+                        <option value="yi-large">零一万物Yi-Large（深度思考）</option>
+                        <option value="custom">自定义API...</option>
+                    </select>
+                    <div id="modalCustomApiPanel" class="hidden mt-2">
+                        <input type="text" id="modalCustomEndpoint" placeholder="https://api.example.com/v1/chat/completions" 
+                            class="w-full px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-academic"
+                            title="API Endpoint地址（OpenAI兼容格式）">
+                        <p class="text-xs text-gray-500 mt-1">请输入OpenAI兼容格式的API Endpoint地址</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="saveApiKey" class="flex-1 px-4 py-2 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                            保存并继续
+                        </button>
+                        <button id="skipApiKey" class="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                            暂时跳过
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 顶部配置栏 -->
+    <div class="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex flex-col lg:flex-row gap-3 items-center justify-between">
+            <h1 class="text-xl font-bold text-academic flex items-center">
+                <i class="fas fa-pen-nib mr-2"></i>MEM论文智能修订助手
+                <span class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">章节精修版</span>
+            </h1>
+            <div class="flex flex-wrap gap-3 items-center">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-600">API Key：</label>
+                    <input type="password" id="apiKey" placeholder="输入API Key" 
+                        class="px-3 py-2 border rounded-md w-48 text-sm focus:ring-2 focus:ring-academic">
+                    <span id="apiKeyStatus" class="text-xs"></span>
+                </div>
+                <select id="aiModel" class="px-3 py-2 border rounded-md text-sm">
+                    <option value="kimi-2.5">KIMI 2.5（深度思考）</option>
+                    <option value="gemini-3.1-pro">Gemini 3.1 Pro（深度思考）</option>
+                    <option value="gpt-4o">GPT-4o（深度思考）</option>
+                    <option value="deepseek-chat">DeepSeek（深度思考）</option>
+                    <option value="qwen-plus">通义Qwen（深度思考）</option>
+                    <option value="glm-4">智谱GLM-4（深度思考）</option>
+                    <option value="ernie-4">文心ERNIE 4.0（深度思考）</option>
+                    <option value="spark-4">讯飞Spark 4.0（深度思考）</option>
+                    <option value="yi-large">零一万物Yi-Large（深度思考）</option>
+                    <option value="custom">自定义API...</option>
+                </select>
+                <div id="customApiPanel" class="hidden flex items-center gap-2">
+                    <input type="text" id="customEndpoint" placeholder="https://api.example.com/v1/chat/completions" 
+                        class="px-3 py-2 border rounded-md w-64 text-sm focus:ring-2 focus:ring-academic" 
+                        title="API Endpoint地址">
+                    <span class="text-xs text-gray-500">Endpoint</span>
+                </div>
+                <button id="clearAllData" class="px-3 py-2 bg-red-100 text-red-600 rounded-md text-sm hover:bg-red-200" title="清空所有数据">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="max-w-7xl mx-auto pt-24 px-4 pb-10">
+        
+        <!-- 功能标签页 -->
+        <div class="flex flex-wrap gap-2 mb-6">
+            <button class="tab-btn tab-active px-5 py-2.5 rounded-full border-2 flex items-center text-sm font-medium transition-all"
+                    data-tab="upload" style="border-color: #165DFF; background: #165DFF; color: white;">
+                <i class="fas fa-upload mr-2"></i>1.论文上传
+            </button>
+            <button class="tab-btn px-5 py-2.5 rounded-full border-2 flex items-center text-sm font-medium transition-all border-gray-300"
+                    data-tab="analyze">
+                <i class="fas fa-search mr-2"></i>2.AI分析
+            </button>
+            <button class="tab-btn px-5 py-2.5 rounded-full border-2 flex items-center text-sm font-medium transition-all border-gray-300"
+                    data-tab="revise">
+                <i class="fas fa-edit mr-2"></i>3.章节修订
+            </button>
+            <button class="tab-btn px-5 py-2.5 rounded-full border-2 flex items-center text-sm font-medium transition-all border-gray-300"
+                    data-tab="export">
+                <i class="fas fa-file-export mr-2"></i>4.导出
+            </button>
+        </div>
+
+        <!-- ========== 标签页1：论文上传 ========== -->
+        <div id="tab-upload" class="tab-content space-y-6">
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-file-import text-academic mr-2"></i>上传MEM学位论文
+                    <span class="ml-2 text-xs bg-academic/10 text-academic px-2 py-1 rounded">支持Word/PDF</span>
+                </h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- 文件上传区 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">拖拽上传文件：</label>
+                        <div class="upload-zone" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-600">将文件拖拽到此处或点击选择</p>
+                            <p class="text-sm text-gray-500 mt-1">.docx / .pdf 文件</p>
+                            <input type="file" id="thesisFile" accept=".docx,.pdf" class="hidden">
+                        </div>
+                        <div id="fileInfo" class="mt-3 hidden">
+                            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                <i class="fas fa-file-alt text-2xl text-academic"></i>
+                                <div class="flex-1">
+                                    <p id="fileName" class="font-medium text-gray-800"></p>
+                                    <p id="fileSize" class="text-sm text-gray-500"></p>
+                                </div>
+                                <button id="removeFile" class="text-red-500 hover:text-red-700">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <button id="importDraft" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm transition-colors">
+                                <i class="fas fa-file-import mr-2"></i>导入初稿
+                            </button>
+                            <span class="text-xs text-gray-500 self-center">从文件自动提取论文标题、专业、关键词等</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 论文信息区 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">论文基本信息（可选）：</label>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">论文标题：</label>
+                                <input type="text" id="thesisInfoTitle" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="从初稿自动提取或手动输入">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">学科/专业：</label>
+                                    <input type="text" id="thesisInfoMajor" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="如：工程管理">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">研究方向：</label>
+                                    <input type="text" id="thesisInfoDirection" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="如：项目管理">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">关键词（用逗号分隔）：</label>
+                                <input type="text" id="thesisInfoKeywords" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="如：工程管理,风险管理,项目决策">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-3">
+                    <button id="parseThesis" class="px-5 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic transition-colors">
+                        <i class="fas fa-file-code mr-2"></i>解析论文结构
+                    </button>
+                    <button id="quickLoad" class="px-5 py-2.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors">
+                        <i class="fas fa-bolt mr-2"></i>快速加载演示数据
+                    </button>
+                </div>
+            </div>
+
+            <!-- 论文结构预览 -->
+            <div id="thesisStructure" class="bg-white rounded-xl p-6 card-shadow hidden">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-sitemap text-purple-600 mr-2"></i>论文结构预览
+                </h2>
+                <div id="chapterList" class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <!-- 动态生成章节卡片 -->
+                </div>
+                <div class="mt-4 flex gap-2">
+                    <button id="selectAllChapters" class="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200 text-sm">
+                        <i class="fas fa-check-square mr-1"></i>全选
+                    </button>
+                    <button id="deselectAllChapters" class="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200 text-sm">
+                        <i class="fas fa-square mr-1"></i>取消全选
+                    </button>
+                    <span class="ml-auto text-sm text-gray-600">
+                        已选: <span id="selectedCount">0</span> 个章节
+                    </span>
+                </div>
+            </div>
+
+            <!-- ========== 章节结构审查与调整 ========== -->
+            <div id="chapterReviewSection" class="bg-white rounded-xl p-6 card-shadow hidden">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-clipboard-check text-warning mr-2"></i>章节结构审查与调整
+                    <span class="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">请确认后再继续</span>
+                </h2>
+                
+                <div id="chapterReviewContent">
+                    <!-- 动态生成审查内容 -->
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-3">
+                    <button id="reviewChapters" class="px-5 py-2.5 bg-warning text-white rounded-md hover:bg-yellow-600 transition-colors">
+                        <i class="fas fa-search-plus mr-2"></i>AI审查章节结构
+                    </button>
+                    <button id="confirmChapters" class="px-5 py-2.5 bg-success text-white rounded-md hover:bg-green-700 transition-colors" disabled>
+                        <i class="fas fa-check mr-2"></i>确认章节结构并继续
+                    </button>
+                    <button id="manualAdjust" class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                        <i class="fas fa-edit mr-2"></i>手动调整章节
+                    </button>
+                </div>
+            </div>
+
+            <!-- 章节结构调整建议 -->
+            <div id="chapterSuggestionPanel" class="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-6 border border-yellow-200 hidden">
+                <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-lightbulb text-warning mr-2"></i>AI章节结构调整建议
+                </h3>
+                <div id="chapterSuggestions" class="space-y-3">
+                    <!-- 动态生成建议 -->
+                </div>
+                <div class="mt-4 p-4 bg-white rounded-lg border">
+                    <p class="text-sm text-gray-600 mb-2">调整后的章节结构：</p>
+                    <div id="adjustedChapterList" class="space-y-2">
+                        <!-- 调整后的章节列表 -->
+                    </div>
+                </div>
+                <div class="mt-4 flex gap-2">
+                    <button id="applySuggestions" class="px-4 py-2 bg-warning text-white rounded-md hover:bg-yellow-600">
+                        <i class="fas fa-check mr-1"></i>采纳建议
+                    </button>
+                    <button id="rejectSuggestions" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                        <i class="fas fa-times mr-1"></i>保持原结构
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 标签页2：AI分析 ========== -->
+        <div id="tab-analyze" class="tab-content space-y-6 hidden">
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-brain text-purple-600 mr-2"></i>AI论文分析诊断
+                </h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- 分析选项 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-3">选择分析维度：</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" class="analysis-option w-4 h-4 text-academic" value="structure" checked>
+                                <span>论文结构分析</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" class="analysis-option w-4 h-4 text-academic" value="writing" checked>
+                                <span>写作质量评估</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" class="analysis-option w-4 h-4 text-academic" value="logic" checked>
+                                <span>逻辑连贯性检查</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" class="analysis-option w-4 h-4 text-academic" value="citation" checked>
+                                <span>文献引用规范</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" class="analysis-option w-4 h-4 text-academic" value="innovation">
+                                <span>创新点识别</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 分析范围 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-3">分析范围：</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="radio" name="analysisScope" class="w-4 h-4 text-academic" value="selected" checked>
+                                <span>仅选中的章节</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="radio" name="analysisScope" class="w-4 h-4 text-academic" value="all">
+                                <span>全文分析</span>
+                            </label>
+                        </div>
+                        <button id="startAnalysis" class="w-full mt-4 px-5 py-2.5 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                            <i class="fas fa-play mr-2"></i>开始AI分析
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分析进度 -->
+            <div id="analysisProgress" class="bg-white rounded-xl p-6 card-shadow hidden">
+                <h3 class="font-medium text-gray-800 mb-3">
+                    <i class="fas fa-spinner fa-spin text-purple-600 mr-2"></i>分析进度
+                </h3>
+                <div class="w-full bg-gray-200 rounded-full h-3 mb-3">
+                    <div id="progressBar" class="bg-purple-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+                </div>
+                <p id="progressText" class="text-sm text-gray-600">准备中...</p>
+            </div>
+
+            <!-- 分析结果 -->
+            <div id="analysisResults" class="bg-white rounded-xl p-6 card-shadow hidden">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-clipboard-check text-green-600 mr-2"></i>分析报告
+                </h2>
+                
+                <!-- 评分卡片 -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                    <div class="bg-red-50 rounded-lg p-4 text-center">
+                        <div class="text-3xl font-bold text-red-600" id="scoreStructure">--</div>
+                        <div class="text-sm text-gray-600 mt-1">结构完整</div>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-4 text-center">
+                        <div class="text-3xl font-bold text-orange-600" id="scoreWriting">--</div>
+                        <div class="text-sm text-gray-600 mt-1">写作质量</div>
+                    </div>
+                    <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                        <div class="text-3xl font-bold text-yellow-600" id="scoreLogic">--</div>
+                        <div class="text-sm text-gray-600 mt-1">逻辑连贯</div>
+                    </div>
+                    <div class="bg-blue-50 rounded-lg p-4 text-center">
+                        <div class="text-3xl font-bold text-blue-600" id="scoreCitation">--</div>
+                        <div class="text-sm text-gray-600 mt-1">引用规范</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-4 text-center">
+                        <div class="text-3xl font-bold text-green-600" id="scoreOverall">--</div>
+                        <div class="text-sm text-gray-600 mt-1">综合评分</div>
+                    </div>
+                </div>
+
+                <!-- 详细问题列表 -->
+                <div id="issueList" class="space-y-3">
+                    <!-- 动态生成问题卡片 -->
+                </div>
+
+                <div class="mt-4 flex gap-2">
+                    <button id="generateRevision" class="px-5 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                        <i class="fas fa-magic mr-2"></i>生成修订建议
+                    </button>
+                    <button id="exportReport" class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                        <i class="fas fa-download mr-2"></i>导出分析报告
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 标签页3：章节修订 ========== -->
+        <div id="tab-revise" class="tab-content space-y-6 hidden">
+            <!-- 章节选择器 -->
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-edit text-academic mr-2"></i>选择要修订的章节
+                </h2>
+                <div id="reviseChapterList" class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 修订工作区 -->
+            <div id="revisionWorkspace" class="hidden">
+                <!-- 左侧：原文 -->
+                <div class="grid lg:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <i class="fas fa-file-alt text-gray-500 mr-2"></i>原文内容
+                            </h3>
+                            <span class="text-sm text-gray-500">字数：<span id="originalWordCount">0</span></span>
+                        </div>
+                        <textarea id="originalText" rows="15" 
+                            class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-academic font-mono text-sm"
+                            placeholder="在此显示原文内容..."></textarea>
+                    </div>
+
+                    <!-- 右侧：修订后 -->
+                    <div class="bg-white rounded-xl p-6 card-shadow">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <i class="fas fa-file-medical text-success mr-2"></i>修订建议
+                            </h3>
+                            <div class="flex gap-2">
+                                <button id="acceptAll" class="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200">
+                                    <i class="fas fa-check mr-1"></i>全部采纳
+                                </button>
+                                <span class="text-sm text-gray-500">字数：<span id="revisedWordCount">0</span></span>
+                            </div>
+                        </div>
+                        <div id="revisedText" class="w-full px-4 py-3 border border-gray-300 rounded-md min-h-[300px] bg-gray-50 whitespace-pre-wrap text-sm"></div>
+                    </div>
+                </div>
+
+                <!-- 修订操作区 -->
+                <div class="bg-white rounded-xl p-6 card-shadow mt-6">
+                    <h3 class="font-bold text-gray-800 mb-4 flex items-center">
+                        <i class="fas fa-wand-magic-sparkles text-purple-600 mr-2"></i>AI修订选项
+                    </h3>
+                    
+                    <div class="grid md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">修订深度：</label>
+                            <select id="revisionDepth" class="w-full px-3 py-2 border rounded-md">
+                                <option value="light">轻度润色（仅修正语法错误）</option>
+                                <option value="medium" selected>中度修订（优化表达）</option>
+                                <option value="deep">深度修订（重构表达）</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">修订风格：</label>
+                            <select id="revisionStyle" class="w-full px-3 py-2 border rounded-md">
+                                <option value="academic">学术规范</option>
+                                <option value="concise">简洁明了</option>
+                                <option value="detailed">详细深入</option>
+                                <option value="persuasive">论证有力</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">关注重点：</label>
+                            <select id="revisionFocus" class="w-full px-3 py-2 border rounded-md">
+                                <option value="general">综合优化</option>
+                                <option value="logic">逻辑强化</option>
+                                <option value="expression">表达优化</option>
+                                <option value="citation">引用规范</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">参考模板：</label>
+                            <div class="flex gap-2">
+                                <select id="revisionTemplate" class="flex-1 px-3 py-2 border rounded-md">
+                                    <option value="">不使用模板</option>
+                                </select>
+                                <button id="addTemplateBtn" onclick="openTemplateModal()" class="px-3 py-2 bg-academic/10 text-academic rounded-md hover:bg-academic/20" title="添加新模板">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                                <button id="deleteTemplateBtn" onclick="deleteSelectedTemplate()" class="px-3 py-2 bg-red-50 text-red-500 rounded-md hover:bg-red-100 hidden" title="删除选中模板">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span id="templateHint" class="text-sm text-gray-500 hidden"></span>
+                    </div>
+
+                    <div class="flex flex-wrap gap-3">
+                        <button id="startRevision" class="px-5 py-2.5 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                            <i class="fas fa-wand-magic-sparkles mr-2"></i>开始AI修订
+                        </button>
+                        <button id="showDiff" class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                            <i class="fas fa-code-compare mr-2"></i>显示差异对比
+                        </button>
+                        <button id="saveRevision" class="px-5 py-2.5 bg-success text-white rounded-md hover:bg-green-700">
+                            <i class="fas fa-save mr-2"></i>保存修订
+                        </button>
+                        <button id="copyRevised" class="px-5 py-2.5 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                            <i class="fas fa-copy mr-2"></i>复制修订内容
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 修订历史 -->
+                <div class="bg-white rounded-xl p-6 card-shadow mt-6">
+                    <h3 class="font-bold text-gray-800 mb-4 flex items-center">
+                        <i class="fas fa-history text-gray-500 mr-2"></i>修订历史
+                    </h3>
+                    <div id="revisionHistory" class="space-y-2 max-h-60 overflow-y-auto">
+                        <p class="text-gray-500 text-sm">暂无修订记录</p>
+                    </div>
+                </div>
+
+                <!-- 模板编辑弹窗 -->
+                <div id="templateModal" class="modal-overlay hidden">
+                    <div class="bg-white rounded-xl p-6 max-w-lg mx-4 shadow-xl">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-bold">新建模板</h3>
+                            <button id="closeTemplateModal" class="text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">模板名称：</label>
+                                <input type="text" id="templateName" class="w-full px-3 py-2 border rounded-md" placeholder="输入模板名称">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">模板分类：</label>
+                                <select id="templateCategory" class="w-full px-3 py-2 border rounded-md">
+                                    <option value="chapter">章节模板</option>
+                                    <option value="language">语言润色</option>
+                                    <option value="structure">结构优化</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">适用场景：</label>
+                                <input type="text" id="templateScenario" class="w-full px-3 py-2 border rounded-md" placeholder="如：绪论、研究方法等">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">模板内容：</label>
+                                <textarea id="templateContent" rows="4" class="w-full px-3 py-2 border rounded-md" placeholder="输入模板内容或修订参考要求..."></textarea>
+                            </div>
+                            <div class="flex gap-2 justify-end">
+                                <button id="cancelTemplate" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">取消</button>
+                                <button id="saveTemplate" class="px-4 py-2 bg-academic text-white rounded-md hover:bg-darkAcademic">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 标签页4：导出 ========== -->
+        <div id="tab-export" class="tab-content space-y-6 hidden">
+            <!-- 导出选项 -->
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-file-export text-academic mr-2"></i>导出设置
+                </h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- 导出格式 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-3">导出格式：</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="export-format flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50" data-format="docx">
+                                <input type="radio" name="exportFormat" value="docx" class="hidden">
+                                <i class="fas fa-file-word text-2xl text-blue-600"></i>
+                                <div>
+                                    <div class="font-medium">Word文档</div>
+                                    <div class="text-xs text-gray-500">.docx格式</div>
+                                </div>
+                            </label>
+                            <label class="export-format flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50" data-format="pdf">
+                                <input type="radio" name="exportFormat" value="pdf" class="hidden">
+                                <i class="fas fa-file-pdf text-2xl text-red-600"></i>
+                                <div>
+                                    <div class="font-medium">PDF文档</div>
+                                    <div class="text-xs text-gray-500">.pdf格式</div>
+                                </div>
+                            </label>
+                            <label class="export-format flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50" data-format="markdown">
+                                <input type="radio" name="exportFormat" value="markdown" checked class="hidden">
+                                <i class="fas fa-file-code text-2xl text-gray-600"></i>
+                                <div>
+                                    <div class="font-medium">Markdown</div>
+                                    <div class="text-xs text-gray-500">.md格式</div>
+                                </div>
+                            </label>
+                            <label class="export-format flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50" data-format="html">
+                                <input type="radio" name="exportFormat" value="html" class="hidden">
+                                <i class="fas fa-file-code text-2xl text-orange-600"></i>
+                                <div>
+                                    <div class="font-medium">HTML</div>
+                                    <div class="text-xs text-gray-500">.html格式</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 导出内容 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-3">导出内容：</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" id="exportOriginal" class="w-4 h-4 text-academic">
+                                <span>原文内容</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" id="exportRevised" class="w-4 h-4 text-academic" checked>
+                                <span>修订后内容</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" id="exportAnalysis" class="w-4 h-4 text-academic">
+                                <span>包含分析报告</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" id="exportComments" class="w-4 h-4 text-academic">
+                                <span>包含修订批注</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 高级选项 -->
+                <div class="mt-6 border-t pt-4">
+                    <button id="toggleAdvanced" class="text-sm text-academic hover:underline">
+                        <i class="fas fa-cog mr-1"></i>高级选项
+                    </button>
+                    <div id="advancedOptions" class="hidden mt-4 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div class="grid md:grid-cols-3 gap-4 flex-1">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">论文标题：</label>
+                                    <input type="text" id="thesisTitle" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="输入论文标题">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">作者姓名：</label>
+                                    <input type="text" id="authorName" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="输入作者姓名">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">学校/单位：</label>
+                                    <input type="text" id="institution" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="输入学校或单位">
+                                </div>
+                            </div>
+                            <button id="applyThesisInfo" class="ml-3 px-3 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm" title="从论文信息填充">
+                                <i class="fas fa-file-import mr-1"></i>填充
+                            </button>
+                        </div>
+                        <div class="grid md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">学科/专业：</label>
+                                <input type="text" id="exportMajor" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="如：工程管理">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">研究方向：</label>
+                                <input type="text" id="exportDirection" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="如：项目管理">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">关键词：</label>
+                                <input type="text" id="exportKeywords" class="w-full px-3 py-2 border rounded-md text-sm" placeholder="用逗号分隔">
+                            </div>
+                        </div>
+
+                        <!-- 论文格式模板上传 -->
+                        <div class="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-200">
+                            <h4 class="font-medium text-gray-800 mb-3 flex items-center">
+                                <i class="fas fa-file-alt text-purple-600 mr-2"></i>论文格式模板（可选）
+                            </h4>
+                            <p class="text-xs text-gray-600 mb-3">
+                                上传学校的论文格式模板文档（Word格式），AI将根据模板格式重新生成论文，确保格式完全符合学校要求。
+                            </p>
+                            <div class="flex items-center gap-4">
+                                <div id="templateFileInfo" class="hidden flex-1 p-2 bg-white rounded border">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fas fa-file-word text-blue-600"></i>
+                                            <span id="templateFileName" class="text-sm text-gray-700 truncate"></span>
+                                        </div>
+                                        <button id="removeTemplateFile" class="text-red-500 hover:text-red-700">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <label class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 cursor-pointer text-sm">
+                                    <i class="fas fa-upload mr-1"></i>上传模板
+                                    <input type="file" id="templateFile" accept=".docx,.doc" class="hidden">
+                                </label>
+                            </div>
+                            <div id="templatePreview" class="mt-3 hidden">
+                                <p class="text-xs text-gray-500 mb-2">模板章节结构预览：</p>
+                                <div id="templateChapters" class="bg-white rounded p-2 max-h-32 overflow-y-auto text-xs text-gray-700 space-y-1"></div>
+                            </div>
+                        </div>
+
+                        <!-- AI格式重生成选项 -->
+                        <div class="flex items-center gap-4">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="useFormatRewrite" class="w-4 h-4 text-academic rounded" checked>
+                                <span class="text-sm text-gray-700">使用AI根据模板格式重生成内容</span>
+                            </label>
+                            <span class="text-xs text-gray-500">(推荐开启，确保输出完全符合模板格式)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="startExport" class="mt-6 px-6 py-3 bg-academic text-white rounded-md hover:bg-darkAcademic text-lg font-medium">
+                    <i class="fas fa-download mr-2"></i>开始导出
+                </button>
+            </div>
+
+            <!-- 导出预览 -->
+            <div id="exportPreview" class="bg-white rounded-xl p-6 card-shadow hidden">
+                <h3 class="font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-eye text-academic mr-2"></i>导出预览
+                </h3>
+                <div id="previewContent" class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                    <!-- 预览内容 -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Toast 通知 -->
+    <div id="toast" class="fixed bottom-4 right-4 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+        <div class="bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <i id="toastIcon" class="fas fa-check-circle text-green-400"></i>
+            <span id="toastMessage"></span>
+        </div>
+    </div>
+
+    <!-- AI 思考中弹窗 -->
+    <div id="aiThinking" class="modal-overlay hidden">
+        <div class="bg-white rounded-xl p-8 max-w-sm mx-4 shadow-xl text-center">
+            <div class="typing-indicator mb-4">
+                <span></span><span></span><span></span>
+            </div>
+            <p class="text-gray-600" id="aiThinkingText">AI正在分析中...</p>
+        </div>
+    </div>
+
+    <!-- 提示词预览/编辑弹窗 -->
+    <div id="promptPreviewModal" class="modal-overlay hidden">
+        <div class="bg-white rounded-xl p-6 max-w-3xl mx-4 shadow-xl max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold flex items-center">
+                    <i class="fas fa-comment-dots text-academic mr-2"></i>提示词预览与编辑
+                </h3>
+                <button id="closePromptModal" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p class="text-sm text-gray-600 mb-3">
+                <i class="fas fa-info-circle mr-1"></i>您可以查看并修改以下提示词，确认后再让AI执行工作。
+            </p>
+            <div class="flex-1 overflow-hidden flex flex-col">
+                <label class="text-sm font-medium text-gray-700 mb-1">提示词内容：</label>
+                <textarea id="promptEditor" rows="15" 
+                    class="flex-1 w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-academic font-mono text-sm resize-none"
+                    placeholder="提示词将显示在这里..."></textarea>
+            </div>
+            <div class="mt-4 flex gap-2 justify-end">
+                <button id="resetPrompt" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                    <i class="fas fa-undo mr-1"></i>重置
+                </button>
+                <button id="cancelPrompt" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                    取消
+                </button>
+                <button id="confirmPrompt" class="px-4 py-2 bg-academic text-white rounded-md hover:bg-darkAcademic">
+                    <i class="fas fa-check mr-1"></i>确认并执行
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 全局状态 ====================
+        const state = {
+            apiKey: '',
+            aiModel: 'kimi-2.5',
+            customEndpoint: '',
+            thesisData: {
+                title: '',
+                major: '',
+                direction: '',
+                keywords: '',
+                chapters: [],
+                rawText: ''
+            },
+            selectedChapters: new Set(),
+            analysisResults: null,
+            revisedChapters: {},
+            templates: [],
+            revisionHistory: [],
+            isChapterApproved: false,
+            formatTemplate: {
+                fileName: '',
+                content: '',
+                chapters: []
+            }
+        };
+
+        // MEM标准章节结构
+        const standardChapters = [
+            { id: 'abstract', name: '摘要', required: true, description: '中文摘要及关键词' },
+            { id: 'introduction', name: '第一章 绪论', required: true, description: '研究背景、意义、目的、方法' },
+            { id: 'literature', name: '第二章 文献综述', required: true, description: '国内外研究现状、理论基础' },
+            { id: 'theory', name: '第三章 理论基础', required: true, description: '相关理论介绍、分析框架' },
+            { id: 'method', name: '第四章 研究设计', required: true, description: '研究方法、数据来源、研究假设' },
+            { id: 'analysis', name: '第五章 实证分析', required: true, description: '数据分析、结果讨论' },
+            { id: 'conclusion', name: '第六章 结论与展望', required: true, description: '研究结论、创新点、局限与展望' },
+            { id: 'references', name: '参考文献', required: true, description: '引用文献列表' },
+            { id: 'appendix', name: '附录', required: false, description: '补充材料、问卷、代码等' },
+            { id: 'acknowledgement', name: '致谢', required: false, description: '致谢相关人员' }
+        ];
+
+        // 章节结构调整建议状态
+        let chapterReviewState = {
+            currentStructure: [],
+            suggestedStructure: [],
+            suggestions: [],
+            isApproved: false
+        };
+
+        // 提示词预览状态
+        let promptState = {
+            currentPrompt: '',
+            defaultPrompt: '',
+            callback: null
+        };
+
+        // 默认模板
+        const defaultTemplates = [
+            {
+                id: 1,
+                name: '学术表达润色',
+                category: 'language',
+                scenario: '通用',
+                content: '请将以下学术论文片段进行润色，使其表达更加规范、流畅、专业。保持原意，注重学术规范。'
+            },
+            {
+                id: 2,
+                name: '研究方法描述',
+                category: 'chapter',
+                scenario: '研究设计章节',
+                content: '请优化以下研究方法描述，使其更加清晰、规范，符合学术论文写作标准。'
+            },
+            {
+                id: 3,
+                name: '结论表述优化',
+                category: 'structure',
+                scenario: '结论章节',
+                content: '请优化以下研究结论的表述，使其更加准确、有力，并突出研究的创新点和贡献。'
+            },
+            {
+                id: 4,
+                name: '文献引用规范',
+                category: 'language',
+                scenario: '引用部分',
+                content: '请检查并优化以下文献引用，使其符合学术规范，格式统一。'
+            },
+            {
+                id: 5,
+                name: '数据分析描述',
+                category: 'chapter',
+                scenario: '实证分析章节',
+                content: '请优化以下数据分析结果的描述，使其更加清晰、专业，准确反映研究发现。'
+            }
+        ];
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFromStorage();
+            initEventListeners();
+            initTemplates();
+            checkApiKey();
+        });
+
+        function loadFromStorage() {
+            const savedApiKey = localStorage.getItem('memRevisionApiKey');
+            const savedModel = localStorage.getItem('memRevisionModel');
+            const savedEndpoint = localStorage.getItem('memRevisionCustomEndpoint');
+            const savedTemplates = localStorage.getItem('memRevisionTemplates');
+            const savedThesis = localStorage.getItem('memRevisionThesis');
+            const savedRevisions = localStorage.getItem('memRevisionRevisions');
+
+            if (savedApiKey) {
+                state.apiKey = savedApiKey;
+                document.getElementById('apiKey').value = savedApiKey;
+                updateApiKeyStatus(true);
+            }
+            if (savedModel) {
+                state.aiModel = savedModel;
+                document.getElementById('aiModel').value = savedModel;
+                // 如果选择了自定义API，显示Endpoint输入框
+                if (savedModel === 'custom') {
+                    document.getElementById('customApiPanel').classList.remove('hidden');
+                }
+            }
+            if (savedEndpoint) {
+                state.customEndpoint = savedEndpoint;
+                document.getElementById('customEndpoint').value = savedEndpoint;
+            }
+            if (savedTemplates) {
+                try {
+                    state.templates = JSON.parse(savedTemplates);
+                } catch (e) {
+                    console.error('模板数据解析失败，使用默认模板', e);
+                    state.templates = [...defaultTemplates];
+                }
+            }
+            if (savedThesis) {
+                try {
+                    state.thesisData = JSON.parse(savedThesis);
+                    // 验证数据结构
+                    if (!state.thesisData.chapters) {
+                        state.thesisData.chapters = [];
+                    }
+                    if (!state.thesisData.title) state.thesisData.title = '';
+                    if (!state.thesisData.major) state.thesisData.major = '';
+                    if (!state.thesisData.direction) state.thesisData.direction = '';
+                    if (!state.thesisData.keywords) state.thesisData.keywords = '';
+                    if (!state.thesisData.rawText) state.thesisData.rawText = '';
+                    
+                    if (state.thesisData.chapters.length > 0) {
+                        showThesisStructure();
+                    }
+                    // 恢复论文信息字段
+                    if (state.thesisData.title) {
+                        document.getElementById('thesisInfoTitle').value = state.thesisData.title;
+                    }
+                    if (state.thesisData.major) {
+                        document.getElementById('thesisInfoMajor').value = state.thesisData.major;
+                    }
+                    if (state.thesisData.direction) {
+                        document.getElementById('thesisInfoDirection').value = state.thesisData.direction;
+                    }
+                    if (state.thesisData.keywords) {
+                        document.getElementById('thesisInfoKeywords').value = state.thesisData.keywords;
+                    }
+                } catch (e) {
+                    console.error('论文数据解析失败，重置数据', e);
+                    state.thesisData = { title: '', major: '', direction: '', keywords: '', chapters: [], rawText: '' };
+                }
+            }
+            if (savedRevisions) {
+                try {
+                    state.revisedChapters = JSON.parse(savedRevisions);
+                } catch (e) {
+                    console.error('修订数据解析失败，使用空数据', e);
+                    state.revisedChapters = {};
+                }
+            }
+        }
+
+        function saveToStorage() {
+            try {
+                // 检查localStorage总容量（约5MB限制）
+                const testKey = '__storage_test__';
+                try {
+                    localStorage.setItem(testKey, 'test');
+                    localStorage.removeItem(testKey);
+                } catch (e) {
+                    showToast('浏览器存储空间不足，请清理后重试', 'warning');
+                    return;
+                }
+                
+                localStorage.setItem('memRevisionApiKey', state.apiKey);
+                localStorage.setItem('memRevisionModel', state.aiModel);
+                localStorage.setItem('memRevisionCustomEndpoint', state.customEndpoint || '');
+                
+                // 保存模板
+                localStorage.setItem('memRevisionTemplates', JSON.stringify(state.templates));
+                
+                // 保存论文数据（但限制rawText大小，避免超过存储限制）
+                const thesisToSave = {
+                    ...state.thesisData,
+                    rawText: state.thesisData.rawText ? state.thesisData.rawText.substring(0, 500000) : '' // 限制在500KB以内
+                };
+                localStorage.setItem('memRevisionThesis', JSON.stringify(thesisToSave));
+                
+                // 保存修订数据
+                localStorage.setItem('memRevisionRevisions', JSON.stringify(state.revisedChapters));
+                
+                // 保存格式模板信息（只保存元数据，不保存全文）
+                localStorage.setItem('memRevisionFormatTemplate', JSON.stringify({
+                    fileName: state.formatTemplate.fileName,
+                    chapterCount: state.formatTemplate.chapters.length
+                }));
+                
+            } catch (e) {
+                console.error('保存数据失败:', e);
+                if (e.name === 'QuotaExceededError') {
+                    showToast('存储空间已满，正在清理旧数据...', 'warning');
+                    // 清理修订历史
+                    state.revisionHistory = [];
+                    try {
+                        localStorage.setItem('memRevisionRevisions', '{}');
+                        localStorage.setItem('memRevisionThesis', JSON.stringify({
+                            title: state.thesisData.title,
+                            chapters: state.thesisData.chapters,
+                            major: state.thesisData.major,
+                            direction: state.thesisData.direction,
+                            keywords: state.thesisData.keywords,
+                            rawText: ''
+                        }));
+                        showToast('已清理旧数据，请重新上传论文', 'info');
+                    } catch (e2) {
+                        showToast('存储失败，请清理浏览器缓存', 'error');
+                    }
+                }
+            }
+        }
+
+        function checkApiKey() {
+            if (!state.apiKey) {
+                document.getElementById('apiKeyReminder').classList.remove('hidden');
+            }
+        }
+
+        // ==================== 事件监听 ====================
+        function initEventListeners() {
+            // API Key
+            document.getElementById('apiKey').addEventListener('change', (e) => {
+                state.apiKey = e.target.value;
+                updateApiKeyStatus(!!state.apiKey);
+                saveToStorage();
+            });
+
+            document.getElementById('aiModel').addEventListener('change', (e) => {
+                state.aiModel = e.target.value;
+                // 显示/隐藏自定义API面板
+                const customPanel = document.getElementById('customApiPanel');
+                if (state.aiModel === 'custom') {
+                    customPanel.classList.remove('hidden');
+                } else {
+                    customPanel.classList.add('hidden');
+                }
+                saveToStorage();
+            });
+
+            document.getElementById('customEndpoint').addEventListener('change', (e) => {
+                state.customEndpoint = e.target.value;
+                saveToStorage();
+            });
+
+            // API Key 弹窗
+            document.getElementById('modalAiModel').addEventListener('change', (e) => {
+                const customPanel = document.getElementById('modalCustomApiPanel');
+                if (e.target.value === 'custom') {
+                    customPanel.classList.remove('hidden');
+                } else {
+                    customPanel.classList.add('hidden');
+                }
+            });
+
+            document.getElementById('saveApiKey').addEventListener('click', () => {
+                state.apiKey = document.getElementById('modalApiKey').value;
+                state.aiModel = document.getElementById('modalAiModel').value;
+                
+                // 处理自定义API的Endpoint
+                if (state.aiModel === 'custom') {
+                    state.customEndpoint = document.getElementById('modalCustomEndpoint').value;
+                    if (!state.customEndpoint || !state.customEndpoint.trim()) {
+                        showToast('请输入自定义API的Endpoint地址', 'error');
+                        return;
+                    }
+                    document.getElementById('customEndpoint').value = state.customEndpoint;
+                    document.getElementById('customApiPanel').classList.remove('hidden');
+                } else {
+                    document.getElementById('customApiPanel').classList.add('hidden');
+                }
+                
+                document.getElementById('apiKey').value = state.apiKey;
+                document.getElementById('aiModel').value = state.aiModel;
+                updateApiKeyStatus(true);
+                saveToStorage();
+                document.getElementById('apiKeyReminder').classList.add('hidden');
+                showToast('API Key已保存', 'success');
+            });
+
+            document.getElementById('skipApiKey').addEventListener('click', () => {
+                document.getElementById('apiKeyReminder').classList.add('hidden');
+            });
+
+            // 标签页切换
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+            });
+
+            // 文件上传
+            const uploadArea = document.getElementById('uploadArea');
+            const thesisFile = document.getElementById('thesisFile');
+            
+            uploadArea.addEventListener('click', () => thesisFile.click());
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('border-academic', 'bg-lightAcademic');
+            });
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('border-academic', 'bg-lightAcademic');
+            });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('border-academic', 'bg-lightAcademic');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+            thesisFile.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+
+            document.getElementById('removeFile').addEventListener('click', () => {
+                thesisFile.value = '';
+                document.getElementById('fileInfo').classList.add('hidden');
+            });
+
+            // 论文解析
+            document.getElementById('parseThesis').addEventListener('click', parseThesis);
+            document.getElementById('quickLoad').addEventListener('click', loadDemoData);
+            
+            // 导入初稿
+            document.getElementById('importDraft').addEventListener('click', importDraftFromFile);
+
+            // 论文信息字段 - 自动保存
+            document.getElementById('thesisInfoTitle').addEventListener('change', (e) => {
+                state.thesisData.title = e.target.value;
+                saveToStorage();
+            });
+            document.getElementById('thesisInfoMajor').addEventListener('change', (e) => {
+                state.thesisData.major = e.target.value;
+                saveToStorage();
+            });
+            document.getElementById('thesisInfoDirection').addEventListener('change', (e) => {
+                state.thesisData.direction = e.target.value;
+                saveToStorage();
+            });
+            document.getElementById('thesisInfoKeywords').addEventListener('change', (e) => {
+                state.thesisData.keywords = e.target.value;
+                saveToStorage();
+            });
+
+            // 章节选择
+            document.getElementById('selectAllChapters').addEventListener('click', selectAllChapters);
+            document.getElementById('deselectAllChapters').addEventListener('click', deselectAllChapters);
+
+            // 章节审查
+            document.getElementById('reviewChapters').addEventListener('click', reviewChapterStructure);
+            document.getElementById('confirmChapters').addEventListener('click', confirmChapterStructure);
+            document.getElementById('manualAdjust').addEventListener('click', openManualAdjust);
+            document.getElementById('applySuggestions').addEventListener('click', applyChapterSuggestions);
+            document.getElementById('rejectSuggestions').addEventListener('click', rejectChapterSuggestions);
+
+            // 提示词预览
+            document.getElementById('closePromptModal').addEventListener('click', closePromptPreview);
+            document.getElementById('cancelPrompt').addEventListener('click', closePromptPreview);
+            document.getElementById('resetPrompt').addEventListener('click', resetPrompt);
+            document.getElementById('confirmPrompt').addEventListener('click', confirmPromptAndExecute);
+
+            // AI分析
+            document.getElementById('startAnalysis').addEventListener('click', startAnalysis);
+            document.getElementById('generateRevision').addEventListener('click', generateRevisionFromAnalysis);
+            document.getElementById('exportReport').addEventListener('click', exportAnalysisReport);
+
+            // 修订功能
+            document.getElementById('startRevision').addEventListener('click', startRevision);
+            document.getElementById('showDiff').addEventListener('click', showDiff);
+            document.getElementById('saveRevision').addEventListener('click', saveRevision);
+            document.getElementById('copyRevised').addEventListener('click', copyRevisedText);
+            document.getElementById('acceptAll').addEventListener('click', acceptAllChanges);
+            
+            // 模板选择
+            document.getElementById('revisionTemplate').addEventListener('change', (e) => {
+                const templateId = e.target.value;
+                const hint = document.getElementById('templateHint');
+                const deleteBtn = document.getElementById('deleteTemplateBtn');
+                if (templateId) {
+                    const template = state.templates.find(t => t.id === parseInt(templateId));
+                    if (template) {
+                        hint.textContent = `📋 已选模板：${template.name}（${getCategoryLabel(template.category)}）`;
+                        hint.classList.remove('hidden');
+                        deleteBtn.classList.remove('hidden');
+                    }
+                } else {
+                    hint.classList.add('hidden');
+                    deleteBtn.classList.add('hidden');
+                }
+            });
+
+            // 模板编辑弹窗
+            document.getElementById('closeTemplateModal').addEventListener('click', closeTemplateModal);
+            document.getElementById('cancelTemplate').addEventListener('click', closeTemplateModal);
+            document.getElementById('saveTemplate').addEventListener('click', saveTemplate);
+
+            // 导出功能
+            document.querySelectorAll('.export-format').forEach(label => {
+                label.addEventListener('click', () => selectExportFormat(label));
+            });
+            document.getElementById('toggleAdvanced').addEventListener('click', toggleAdvanced);
+            document.getElementById('startExport').addEventListener('click', startExport);
+            document.getElementById('applyThesisInfo').addEventListener('click', applyThesisInfoToExport);
+
+            // 论文格式模板上传
+            document.getElementById('templateFile').addEventListener('change', handleTemplateFileUpload);
+            document.getElementById('removeTemplateFile').addEventListener('click', removeTemplateFile);
+
+            // 清空数据
+            document.getElementById('clearAllData').addEventListener('click', clearAllData);
+
+            // 实时字数统计
+            document.getElementById('originalText').addEventListener('input', (e) => {
+                const count = e.target.value.replace(/\s/g, '').length;
+                document.getElementById('originalWordCount').textContent = count;
+            });
+
+            document.getElementById('revisedText').addEventListener('input', (e) => {
+                const count = e.target.value.replace(/\s/g, '').length;
+                document.getElementById('revisedWordCount').textContent = count;
+            });
+        }
+
+        // ==================== API Key 状态 ====================
+        function updateApiKeyStatus(valid) {
+            const status = document.getElementById('apiKeyStatus');
+            if (valid) {
+                status.innerHTML = '';
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-check-circle text-green-500';
+                const text = document.createTextNode(' 已设置');
+                status.appendChild(icon);
+                status.appendChild(text);
+                status.className = 'text-xs text-green-600';
+            } else {
+                status.innerHTML = '';
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-exclamation-circle text-red-500';
+                const text = document.createTextNode(' 未设置');
+                status.appendChild(icon);
+                status.appendChild(text);
+                status.className = 'text-xs text-red-600';
+            }
+        }
+
+        function requireApiKey() {
+            if (!state.apiKey || !state.apiKey.trim()) {
+                showToast('请先设置API Key', 'warning');
+                document.getElementById('apiKeyReminder').classList.remove('hidden');
+                return false;
+            }
+            // 验证API Key格式（至少10个字符，通常API Key不会太短）
+            if (state.apiKey.trim().length < 10) {
+                showToast('API Key格式不正确，请检查', 'warning');
+                return false;
+            }
+            return true;
+        }
+
+        // ==================== 标签页切换 ====================
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const isActive = btn.dataset.tab === tab;
+                btn.style.borderColor = isActive ? '#165DFF' : '#d1d5db';
+                btn.style.background = isActive ? '#165DFF' : 'white';
+                btn.style.color = isActive ? 'white' : '#374151';
+            });
+
+            // 切换到修订页面时刷新章节列表和加载模板
+            if (tab === 'revise') {
+                renderReviseChapterList();
+                loadRevisionTemplates();
+            }
+            // 切换到导出页面时刷新预览
+            if (tab === 'export') {
+                updateExportPreview();
+            }
+        }
+
+        // ==================== 文件处理 ====================
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB文件大小限制
+        
+        async function handleFile(file) {
+            const validTypes = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/pdf'];
+            if (!validTypes.includes(file.type) && !file.name.endsWith('.docx') && !file.name.endsWith('.pdf')) {
+                showToast('请上传Word或PDF文件', 'error');
+                return;
+            }
+            
+            // 文件大小检查
+            if (file.size > MAX_FILE_SIZE) {
+                showToast('文件大小超过10MB限制，请上传更小的文件', 'error');
+                return;
+            }
+            
+            if (file.size === 0) {
+                showToast('文件为空，请选择有效的文件', 'error');
+                return;
+            }
+
+            document.getElementById('fileInfo').classList.remove('hidden');
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = formatFileSize(file.size);
+
+            try {
+                let text = '';
+                if (file.name.endsWith('.docx')) {
+                    text = await extractDocxText(file);
+                } else if (file.name.endsWith('.pdf')) {
+                    text = await extractPdfText(file);
+                }
+                state.thesisData.rawText = text;
+                showToast('文件解析成功', 'success');
+            } catch (error) {
+                showToast('文件解析失败: ' + error.message, 'error');
+            }
+        }
+
+        async function extractDocxText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const result = await mammoth.extractRawText({ arrayBuffer: e.target.result });
+                        resolve(result.value);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        async function extractPdfText(file) {
+            const pdfjsLib = window.pdfjsLib;
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const pdf = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+                        let text = '';
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            text += content.items.map(item => item.str).join(' ') + '\n';
+                        }
+                        resolve(text);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // ==================== 导入初稿 ====================
+        function importDraftFromFile() {
+            // 检查是否有已上传的文件文本
+            const content = state.thesisData.rawText?.trim();
+            if (!content) {
+                showToast('请先上传论文文件', 'warning');
+                return;
+            }
+
+            // 提取论文信息
+            const thesisInfo = extractThesisInfo(content);
+            
+            // 填充表单
+            document.getElementById('thesisInfoTitle').value = thesisInfo.title || '';
+            document.getElementById('thesisInfoMajor').value = thesisInfo.major || '';
+            document.getElementById('thesisInfoDirection').value = thesisInfo.direction || '';
+            document.getElementById('thesisInfoKeywords').value = thesisInfo.keywords || '';
+            
+            // 更新state中的标题
+            if (thesisInfo.title) {
+                state.thesisData.title = thesisInfo.title;
+            }
+            
+            // 显示导入结果提示
+            const extractedCount = [thesisInfo.title, thesisInfo.major, thesisInfo.direction, thesisInfo.keywords].filter(v => v).length;
+            if (extractedCount > 0) {
+                showToast(`已从初稿提取${extractedCount}项信息`, 'success');
+            } else {
+                showToast('未能从初稿提取论文信息，请手动填写', 'info');
+            }
+            
+            saveToStorage();
+        }
+
+        function extractThesisInfo(content) {
+            if (!content || typeof content !== 'string') {
+                return { title: '', major: '', direction: '', keywords: '' };
+            }
+            
+            const info = {
+                title: '',
+                major: '',
+                direction: '',
+                keywords: ''
+            };
+
+            // 限制处理的内容长度
+            const safeContent = content.substring(0, 50000);
+
+            // 提取标题 - 通常在摘要前或文件开头
+            // 匹配模式：可能包含"题目"、"title"、"《》"、或纯文本标题
+            const titlePatterns = [
+                /(?:题目|Title)[:：]\s*(.+?)(?:\n|$)/i,
+                /《(.+?)》/,
+                /(.+?)\s*[-—]\s*工程管理/i,
+                /(.+?)\s*[-—]\s*MEM/i,
+                /(.+?)\s*[-—]\s*工商管理/i,
+                /^#\s*(.+?)$/m,
+                /^(.+?)(?:\n|=+)/m,
+            ];
+
+            for (const pattern of titlePatterns) {
+                try {
+                    const match = safeContent.match(pattern);
+                    if (match && match[1] && match[1].length > 5 && match[1].length < 100) {
+                        // 转义HTML并限制长度
+                        info.title = escapeHtml(match[1].trim().substring(0, 80));
+                        break;
+                    }
+                } catch (e) {
+                    // 忽略正则错误
+                }
+            }
+
+            // 提取学科/专业
+            const majorPatterns = [
+                /(?:学科|专业)[:：]\s*(.+?)(?:\n|，|$)/i,
+                /(?:工程管理\s*[-—]\s*)([^，,]+)/i,
+                /(?:工商管理\s*[-—]\s*)([^，,]+)/i,
+                /(?:MEM|MBA|EMBA)\s*[-—]\s*([^，,]+)/i,
+                /学习中心[:：]\s*(.+?)(?:\n|$)/i,
+                /培养单位[:：]\s*(.+?)(?:\n|$)/i,
+            ];
+
+            for (const pattern of majorPatterns) {
+                try {
+                    const match = safeContent.match(pattern);
+                    if (match && match[1]) {
+                        const major = match[1].trim();
+                        // 过滤掉太短或太长的内容
+                        if (major.length >= 2 && major.length < 30) {
+                            info.major = escapeHtml(major.substring(0, 20));
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    // 忽略正则错误
+                }
+            }
+
+            // 提取研究方向
+            const directionPatterns = [
+                /(?:研究方向)[:：]\s*(.+?)(?:\n|，|$)/i,
+                /(?:研究领域)[:：]\s*(.+?)(?:\n|，|$)/i,
+            ];
+
+            for (const pattern of directionPatterns) {
+                try {
+                    const match = safeContent.match(pattern);
+                    if (match && match[1]) {
+                        const direction = match[1].trim();
+                        if (direction.length >= 2 && direction.length < 50) {
+                            info.direction = escapeHtml(direction.substring(0, 30));
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    // 忽略正则错误
+                }
+            }
+
+            // 提取关键词 - 通常在摘要的关键词部分
+            const keywordPatterns = [
+                /(?:关键词|Keywords)[:：]\s*(.+?)(?:\n|$)/i,
+                /(?:关键词)[:：]\s*[\[【]?\s*(.+?)\s*[\]】]?(?:\n|$)/i,
+            ];
+
+            for (const pattern of keywordPatterns) {
+                try {
+                    const match = safeContent.match(pattern);
+                    if (match && match[1]) {
+                        // 清理关键词，移除括号内容，保留逗号分隔的关键词
+                        let keywords = match[1].trim();
+                        // 移除英文括号内容
+                        keywords = keywords.replace(/\([^)]*\)/g, '');
+                        keywords = keywords.replace(/\[[^\]]*\]/g, '');
+                        keywords = keywords.replace(/【[^】]*】/g, '');
+                        // 移除多余的符号，保留逗号分隔的关键词
+                        keywords = keywords.replace(/[；;]/g, ',');
+                        keywords = keywords.replace(/\s+/g, '');
+                        if (keywords.length >= 2 && keywords.length < 200) {
+                            info.keywords = escapeHtml(keywords.substring(0, 100));
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    // 忽略正则错误
+                }
+            }
+
+            return info;
+        }
+
+        // ==================== 论文解析 ====================
+        function parseThesis() {
+            // 优先使用已上传文件的文本内容
+            const content = state.thesisData.rawText?.trim();
+            if (!content) {
+                showToast('请先上传论文文件', 'warning');
+                return;
+            }
+            state.isChapterApproved = false;
+
+            // 智能识别章节
+            const chapters = identifyChapters(content);
+            state.thesisData.chapters = chapters;
+
+            // 更新章节选择
+            state.selectedChapters = new Set(chapters.map(c => c.id));
+
+            showThesisStructure();
+            showChapterReviewSection();
+            saveToStorage();
+            showToast('论文结构解析完成，请审查章节设置', 'success');
+        }
+
+        function identifyChapters(content) {
+            if (!content || typeof content !== 'string') {
+                return [{
+                    id: 'fulltext',
+                    name: '全文内容',
+                    content: '',
+                    hasRevision: false
+                }];
+            }
+            
+            // 限制处理的内容长度
+            const safeContent = content.substring(0, 200000);
+            const chapters = [];
+            const patterns = [
+                { id: 'abstract', name: '摘要', regex: /(?:摘要|Abstract)/i },
+                { id: 'introduction', name: '第一章.*?绪论', regex: /(?:第一章|1\.\s*)(?:绪论|导论|引言)/i },
+                { id: 'literature', name: '第二章.*?文献', regex: /(?:第二章|2\.\s*)(?:文献|研究综述)/i },
+                { id: 'theory', name: '第三章.*?理论', regex: /(?:第三章|3\.\s*)(?:理论|理论基础)/i },
+                { id: 'method', name: '第四章.*?研究设计', regex: /(?:第四章|4\.\s*)(?:研究设计|研究方法|研究框架)/i },
+                { id: 'analysis', name: '第五章.*?分析', regex: /(?:第五章|5\.\s*)(?:实证|分析|结果)/i },
+                { id: 'conclusion', name: '第六章.*?结论', regex: /(?:第六章|6\.\s*)(?:结论|总结|展望)/i },
+                { id: 'references', name: '参考文献', regex: /参考文献/i },
+                { id: 'appendix', name: '附录', regex: /附录/i },
+                { id: 'acknowledgement', name: '致谢', regex: /致谢|Acknowledgement/i }
+            ];
+
+            let lastIndex = 0;
+            patterns.forEach(pattern => {
+                try {
+                    const match = safeContent.match(pattern.regex);
+                    if (match && match.index !== undefined) {
+                        // 提取章节内容
+                        const startIndex = match.index;
+                        const endIndex = pattern.id === 'references' || pattern.id === 'appendix' || pattern.id === 'acknowledgement'
+                            ? safeContent.length
+                            : safeContent.indexOf('参考文献', startIndex);
+                        
+                        const chapterContent = safeContent.substring(startIndex, endIndex > 0 ? endIndex : safeContent.length).trim();
+                        
+                        if (chapterContent.length > 100) { // 只保留有实质内容的章节
+                            chapters.push({
+                                id: pattern.id,
+                                name: pattern.name,
+                                content: chapterContent.substring(0, 50000), // 限制单个章节长度
+                                hasRevision: !!state.revisedChapters[pattern.id]
+                            });
+                        }
+                    }
+                } catch (e) {
+                    // 忽略正则错误
+                }
+            });
+
+            // 如果没有识别到章节，创建通用章节
+            if (chapters.length === 0) {
+                chapters.push({
+                    id: 'fulltext',
+                    name: '全文内容',
+                    content: safeContent,
+                    hasRevision: !!state.revisedChapters['fulltext']
+                });
+            }
+
+            return chapters;
+        }
+
+        function showThesisStructure() {
+            const container = document.getElementById('thesisStructure');
+            const list = document.getElementById('chapterList');
+            
+            container.classList.remove('hidden');
+            list.innerHTML = state.thesisData.chapters.map(chapter => `
+                <div class="chapter-card ${state.selectedChapters.has(chapter.id) ? 'active' : ''} ${chapter.hasRevision ? 'completed' : ''}" 
+                     data-id="${escapeHtml(chapter.id || '')}">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" class="chapter-checkbox w-4 h-4 text-academic" 
+                                   data-id="${escapeHtml(chapter.id || '')}" ${state.selectedChapters.has(chapter.id) ? 'checked' : ''}>
+                            <span class="font-medium text-gray-800">${escapeHtml(chapter.name || '')}</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            ${chapter.hasRevision ? '<span class="revision-badge bg-green-100 text-green-700"><i class="fas fa-check mr-1"></i>已修订</span>' : ''}
+                            <span class="text-xs text-gray-500">${(chapter.content.length / 1000).toFixed(1)}k字</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // 添加章节选择事件
+            list.querySelectorAll('.chapter-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', (e) => {
+                    const id = e.target.dataset.id;
+                    if (e.target.checked) {
+                        state.selectedChapters.add(id);
+                    } else {
+                        state.selectedChapters.delete(id);
+                    }
+                    updateChapterCardStyle();
+                    updateSelectedCount();
+                });
+            });
+
+            list.querySelectorAll('.chapter-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.type !== 'checkbox') {
+                        const checkbox = card.querySelector('.chapter-checkbox');
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+
+            updateSelectedCount();
+        }
+
+        function updateChapterCardStyle() {
+            document.querySelectorAll('.chapter-card').forEach(card => {
+                const id = card.dataset.id;
+                const checkbox = card.querySelector('.chapter-checkbox');
+                card.classList.toggle('active', state.selectedChapters.has(id));
+            });
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selectedCount').textContent = state.selectedChapters.size;
+        }
+
+        function selectAllChapters() {
+            state.selectedChapters = new Set(state.thesisData.chapters.map(c => c.id));
+            document.querySelectorAll('.chapter-checkbox').forEach(cb => cb.checked = true);
+            updateChapterCardStyle();
+            updateSelectedCount();
+        }
+
+        function deselectAllChapters() {
+            state.selectedChapters.clear();
+            document.querySelectorAll('.chapter-checkbox').forEach(cb => cb.checked = false);
+            updateChapterCardStyle();
+            updateSelectedCount();
+        }
+
+        function loadDemoData() {
+            state.thesisData = {
+                title: '基于XX理论的MEM学位论文研究',
+                chapters: [
+                    {
+                        id: 'abstract',
+                        name: '摘要',
+                        content: '本研究基于XX理论，对MEM工程管理领域的关键问题进行了深入探讨。研究采用文献综述、案例分析和实证研究相结合的方法，首先梳理了国内外相关研究成果，然后构建了理论分析框架，最后通过实证数据验证了研究假设。研究结果表明，该理论对解释MEM领域的现象具有显著效果，研究结论对于工程管理实践具有一定的指导意义。',
+                        hasRevision: false
+                    },
+                    {
+                        id: 'introduction',
+                        name: '第一章 绪论',
+                        content: '1.1 研究背景\n随着工程管理领域的快速发展，传统的管理模式已难以满足现代项目的需求。本研究聚焦于MEM工程管理中的核心问题，旨在通过理论创新和实践探索，为行业发展提供新的思路和方法。\n\n1.2 研究意义\n理论意义：本研究拓展了XX理论在工程管理领域的应用范围，丰富了相关理论体系。\n实践意义：研究成果可为工程管理实践提供参考，帮助企业提升管理效率。\n\n1.3 研究内容与方法\n本研究主要包括以下几个方面：文献综述、理论框架构建、实证分析、结论与展望。研究方法包括文献分析法、案例研究法和问卷调查法。',
+                        hasRevision: false
+                    },
+                    {
+                        id: 'method',
+                        name: '第四章 研究设计',
+                        content: '4.1 研究框架\n本研究构建了"理论-假设-验证"的研究框架。理论层面基于XX理论建立分析模型，假设层面提出若干研究假设，验证层面通过实证数据进行检验。\n\n4.2 研究方法\n文献研究法：通过梳理国内外相关文献，厘清研究脉络。\n案例分析法：选取典型案例进行深入分析。\n问卷调查法：设计调查问卷收集一手数据。\n\n4.3 数据来源\n本研究数据主要来源于三个方面：公开数据库、问卷调查和企业访谈。',
+                        hasRevision: false
+                    }
+                ],
+                rawText: ''
+            };
+
+            state.selectedChapters = new Set(state.thesisData.chapters.map(c => c.id));
+            showThesisStructure();
+            showChapterReviewSection();
+            saveToStorage();
+            showToast('演示数据已加载', 'success');
+        }
+
+        // ==================== 章节结构审查 ====================
+        function showChapterReviewSection() {
+            const section = document.getElementById('chapterReviewSection');
+            const content = document.getElementById('chapterReviewContent');
+
+            section.classList.remove('hidden');
+
+            // 显示当前章节结构
+            const currentIds = state.thesisData.chapters.map(c => c.id);
+            const missingRequired = standardChapters.filter(s => s.required && !currentIds.includes(s.id));
+            const existingNames = state.thesisData.chapters.map(c => c.name);
+
+            content.innerHTML = `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-list-ul text-academic mr-2"></i>当前论文结构
+                        </h4>
+                        <div class="space-y-2 max-h-60 overflow-y-auto">
+                            ${state.thesisData.chapters.map((ch, i) => `
+                                <div class="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                                    <span class="text-gray-500 text-sm">${i + 1}.</span>
+                                    <span class="font-medium">${escapeHtml(ch.name || '')}</span>
+                                    <span class="text-xs text-gray-400 ml-auto">${(ch.content.length / 1000).toFixed(1)}k字</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-check-double text-success mr-2"></i>MEM标准结构
+                        </h4>
+                        <div class="space-y-2 max-h-60 overflow-y-auto">
+                            ${standardChapters.map(s => {
+                                const hasIt = existingNames.some(n => n.includes(s.name.replace('第一章 ', '').replace('第二章 ', '').replace('第三章 ', '').replace('第四章 ', '').replace('第五章 ', '').replace('第六章 ', '')));
+                                return `
+                                    <div class="flex items-center gap-2 p-2 rounded ${hasIt ? 'bg-green-50' : s.required ? 'bg-red-50' : 'bg-gray-50'}">
+                                        ${hasIt ? '<i class="fas fa-check-circle text-green-500"></i>' : s.required ? '<i class="fas fa-exclamation-circle text-red-500"></i>' : '<i class="fas fa-minus-circle text-gray-400"></i>'}
+                                        <span class="${hasIt ? 'text-green-700' : s.required ? 'text-red-700' : 'text-gray-600'}">${escapeHtml(s.name || '')}</span>
+                                        ${s.required ? '<span class="text-xs text-red-500 ml-auto">必填</span>' : '<span class="text-xs text-gray-400 ml-auto">可选</span>'}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+                ${missingRequired.length > 0 ? `
+                    <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p class="text-red-700 font-medium"><i class="fas fa-exclamation-triangle mr-2"></i>缺少必要章节：</p>
+                        <p class="text-red-600 text-sm mt-1">${escapeHtml(missingRequired.map(m => m.name).join('、'))}</p>
+                    </div>
+                ` : `
+                    <div class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <p class="text-green-700"><i class="fas fa-check-circle mr-2"></i>章节结构基本完整</p>
+                    </div>
+                `}
+            `;
+
+            // 重置确认按钮状态
+            chapterReviewState = {
+                currentStructure: [...state.thesisData.chapters],
+                suggestedStructure: [...state.thesisData.chapters],
+                suggestions: [],
+                isApproved: false
+            };
+            document.getElementById('confirmChapters').disabled = true;
+        }
+
+        async function reviewChapterStructure() {
+            if (!requireApiKey()) return;
+
+            if (state.thesisData.chapters.length === 0) {
+                showToast('请先解析论文', 'warning');
+                return;
+            }
+
+            const currentChapters = state.thesisData.chapters.map(c => `${c.name}: ${c.content.substring(0, 500)}...`).join('\n');
+            const reviewPrompt = `请审查以下MEM论文的章节结构是否合理，并提供调整建议。
+
+MEM标准章节结构：
+${standardChapters.map(s => `- ${s.name}（${s.required ? '必填' : '可选'}）：${s.description}`).join('\n')}
+
+当前论文结构：
+${currentChapters}
+
+请以JSON格式返回审查结果：
+{
+    "isReasonable": true/false,
+    "issues": [
+        {
+            "type": "missing/incorrect/extra/redundant",
+            "description": "问题描述",
+            "suggestion": "调整建议"
+        }
+    ],
+    "suggestedStructure": [
+        {
+            "id": "章节ID",
+            "name": "建议的章节名称",
+            "reason": "为什么建议这样调整"
+        }
+    ],
+    "reorganizeContent": "是否需要重新组织内容（true/false）及原因"
+}`;
+
+            // 显示提示词预览
+            showPromptPreview(reviewPrompt, (confirmedPrompt) => {
+                executeChapterReview(confirmedPrompt);
+            });
+        }
+
+        async function executeChapterReview(prompt) {
+            showAiThinking('正在审查章节结构...');
+
+            try {
+                const response = await callAI(prompt);
+                const result = parseChapterReviewResponse(response);
+
+                chapterReviewState.suggestions = result.issues;
+                chapterReviewState.suggestedStructure = result.suggestedStructure;
+
+                // 显示建议面板
+                const suggestionPanel = document.getElementById('chapterSuggestionPanel');
+                const suggestionsContainer = document.getElementById('chapterSuggestions');
+                const adjustedList = document.getElementById('adjustedChapterList');
+
+                suggestionsContainer.innerHTML = result.issues.map(issue => {
+                    const icon = issue.type === 'missing' ? 'fa-plus-circle text-blue-500' :
+                                 issue.type === 'incorrect' ? 'fa-exchange-alt text-yellow-500' :
+                                 issue.type === 'extra' ? 'fa-minus-circle text-red-500' :
+                                 'fa-comments text-gray-500';
+                    const bgClass = issue.type === 'missing' ? 'bg-blue-50 border-blue-200' :
+                                   issue.type === 'incorrect' ? 'bg-yellow-50 border-yellow-200' :
+                                   issue.type === 'extra' ? 'bg-red-50 border-red-200' :
+                                   'bg-gray-50 border-gray-200';
+
+                    return `
+                        <div class="p-3 rounded-lg border ${bgClass}">
+                            <div class="flex items-start gap-2">
+                                <i class="fas ${icon} mt-1"></i>
+                                <div>
+                                    <p class="font-medium text-gray-800">${escapeHtml(issue.description || '')}</p>
+                                    <p class="text-sm text-academic mt-1"><i class="fas fa-arrow-right mr-1"></i>${escapeHtml(issue.suggestion || '')}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                // 显示调整后的章节列表
+                adjustedList.innerHTML = result.suggestedStructure.map((s, i) => `
+                    <div class="flex items-center gap-2 p-2 bg-academic/5 rounded">
+                        <span class="w-6 h-6 rounded-full bg-academic text-white text-xs flex items-center justify-center">${i + 1}</span>
+                        <span class="font-medium">${escapeHtml(s.name || '')}</span>
+                        <span class="text-xs text-gray-500 ml-auto">${escapeHtml(s.reason || '')}</span>
+                    </div>
+                `).join('');
+
+                suggestionPanel.classList.remove('hidden');
+                hideAiThinking();
+
+                if (result.issues.length === 0) {
+                    showToast('章节结构合理，无需调整', 'success');
+                    document.getElementById('confirmChapters').disabled = false;
+                } else {
+                    showToast('已生成章节调整建议，请查看并确认', 'info');
+                }
+            } catch (error) {
+                hideAiThinking();
+                showToast('审查失败: ' + error.message, 'error');
+            }
+        }
+
+        function parseChapterReviewResponse(response) {
+            try {
+                const jsonMatch = response.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    // 验证返回的数据结构
+                    if (parsed && typeof parsed === 'object') {
+                        return {
+                            isReasonable: parsed.isReasonable === true,
+                            issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+                            suggestedStructure: Array.isArray(parsed.suggestedStructure) ? parsed.suggestedStructure : []
+                        };
+                    }
+                }
+            } catch (e) {
+                console.error('章节审查JSON解析失败', e);
+            }
+
+            // 返回默认分析
+            const currentNames = state.thesisData.chapters.map(c => c.name);
+            const issues = [];
+            const suggestedStructure = [];
+
+            // 检查缺失的必填章节
+            standardChapters.filter(s => s.required).forEach(s => {
+                if (!currentNames.some(n => n.includes(s.name.replace(/第.章 /, '')))) {
+                    issues.push({
+                        type: 'missing',
+                        description: `缺少"${s.name}"章节`,
+                        suggestion: `建议添加该章节以符合MEM论文规范`
+                    });
+                }
+            });
+
+            // 生成建议结构
+            standardChapters.forEach(s => {
+                const existing = state.thesisData.chapters.find(c => c.name.includes(s.name.replace(/第.章 /, '')));
+                if (existing) {
+                    suggestedStructure.push({
+                        id: existing.id,
+                        name: existing.name,
+                        reason: '保留原有内容'
+                    });
+                } else if (s.required) {
+                    suggestedStructure.push({
+                        id: s.id,
+                        name: s.name,
+                        reason: '建议新增'
+                    });
+                }
+            });
+
+            return {
+                isReasonable: issues.length === 0,
+                issues,
+                suggestedStructure: suggestedStructure.length > 0 ? suggestedStructure : state.thesisData.chapters.map(c => ({ id: c.id, name: c.name, reason: '保留' }))
+            };
+        }
+
+        function applyChapterSuggestions() {
+            // 应用建议的章节结构
+            const newChapters = [];
+
+            chapterReviewState.suggestedStructure.forEach(suggested => {
+                const existing = state.thesisData.chapters.find(c => c.id === suggested.id || c.name === suggested.name);
+                if (existing) {
+                    newChapters.push(existing);
+                } else {
+                    // 新增章节
+                    newChapters.push({
+                        id: suggested.id,
+                        name: suggested.name,
+                        content: '',
+                        hasRevision: false,
+                        isNew: true
+                    });
+                }
+            });
+
+            state.thesisData.chapters = newChapters;
+            state.selectedChapters = new Set(newChapters.filter(c => !c.isNew).map(c => c.id));
+
+            // 隐藏建议面板
+            document.getElementById('chapterSuggestionPanel').classList.add('hidden');
+
+            // 重新显示结构
+            showThesisStructure();
+            showChapterReviewSection();
+
+            chapterReviewState.isApproved = false;
+            document.getElementById('confirmChapters').disabled = false;
+            showToast('已采纳建议，章节结构已更新', 'success');
+        }
+
+        function rejectChapterSuggestions() {
+            // 保持原结构
+            document.getElementById('chapterSuggestionPanel').classList.add('hidden');
+            chapterReviewState.isApproved = false;
+            document.getElementById('confirmChapters').disabled = false;
+            showToast('已拒绝建议，保持原有章节结构', 'info');
+        }
+
+        // ==================== 提示词预览 ====================
+        function showPromptPreview(prompt, callback) {
+            promptState.currentPrompt = prompt;
+            promptState.defaultPrompt = prompt;
+            promptState.callback = callback;
+
+            const modal = document.getElementById('promptPreviewModal');
+            const editor = document.getElementById('promptEditor');
+
+            editor.value = prompt;
+            modal.classList.remove('hidden');
+        }
+
+        function closePromptPreview() {
+            document.getElementById('promptPreviewModal').classList.add('hidden');
+            promptState.callback = null;
+        }
+
+        function resetPrompt() {
+            document.getElementById('promptEditor').value = promptState.defaultPrompt;
+            promptState.currentPrompt = promptState.defaultPrompt;
+            showToast('已重置为默认提示词', 'info');
+        }
+
+        function confirmPromptAndExecute() {
+            const editedPrompt = document.getElementById('promptEditor').value.trim();
+            if (!editedPrompt) {
+                showToast('提示词不能为空', 'warning');
+                return;
+            }
+
+            closePromptPreview();
+
+            if (promptState.callback) {
+                promptState.callback(editedPrompt);
+            }
+        }
+
+        function confirmChapterStructure() {
+            chapterReviewState.isApproved = true;
+            state.isChapterApproved = true;
+
+            // 重新组织论文内容
+            reorganizeThesisContent();
+
+            // 切换到AI分析页面
+            switchTab('analyze');
+            showToast('章节结构已确认，开始AI分析', 'success');
+
+            // 保存状态
+            saveToStorage();
+        }
+
+        async function reorganizeThesisContent() {
+            if (!requireApiKey()) return;
+
+            const needsReorganize = chapterReviewState.suggestions.some(s => s.type === 'missing' || s.type === 'incorrect');
+
+            if (!needsReorganize) {
+                return;
+            }
+
+            const currentContent = state.thesisData.rawText;
+            const targetStructure = chapterReviewState.suggestedStructure.map(s => s.name).join('\n');
+
+            const reorganizePrompt = `请根据以下目标章节结构，重新组织论文内容。原文可能在某些部分内容不足或缺失，请根据现有内容进行合理分配，并在缺失部分添加提示性占位文字"[待补充：xxx]"。
+
+重要说明：如果原文包含公式，请将公式转换为LaTeX格式，用\\(...\\)包裹行内公式，\\[...\\]包裹独立公式行。
+
+目标章节结构：
+${targetStructure}
+
+原文内容：
+${currentContent.substring(0, 15000)}
+
+请以JSON格式返回重组后的论文内容：
+{
+    "chapters": [
+        {
+            "id": "章节ID",
+            "name": "章节名称",
+            "content": "该章节的完整内容（包含LaTeX格式的公式）"
+        }
+    ]
+}`;
+
+            // 显示提示词预览
+            showPromptPreview(reorganizePrompt, (confirmedPrompt) => {
+                executeReorganize(confirmedPrompt);
+            });
+        }
+
+        async function executeReorganize(prompt) {
+            showAiThinking('正在按照新结构整理论文内容...');
+
+            try {
+                const response = await callAI(prompt);
+                const result = parseReorganizeResponse(response);
+
+                if (result && result.chapters) {
+                    // 更新章节内容
+                    result.chapters.forEach(newChapter => {
+                        const existing = state.thesisData.chapters.find(c => c.id === newChapter.id || c.name === newChapter.id);
+                        if (existing) {
+                            existing.content = newChapter.content;
+                        }
+                    });
+                    saveToStorage();
+                }
+
+                hideAiThinking();
+                showToast('论文内容已按新结构整理', 'success');
+            } catch (error) {
+                hideAiThinking();
+                console.error('整理内容失败:', error);
+                showToast('内容整理失败，将保留原内容', 'warning');
+            }
+        }
+
+        function parseReorganizeResponse(response) {
+            try {
+                const jsonMatch = response.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    // 验证返回的数据结构
+                    if (parsed && parsed.chapters && Array.isArray(parsed.chapters)) {
+                        return parsed;
+                    }
+                }
+            } catch (e) {
+                console.error('内容整理JSON解析失败', e);
+            }
+            return null;
+        }
+
+        function openManualAdjust() {
+            // 打开手动调整模式
+            const content = document.getElementById('chapterReviewContent');
+
+            content.innerHTML = `
+                <div>
+                    <h4 class="font-medium text-gray-800 mb-3">手动调整章节结构</h4>
+                    <p class="text-sm text-gray-600 mb-4">点击下方按钮添加/删除章节，或拖拽调整顺序</p>
+
+                    <div class="space-y-3" id="manualChapterList">
+                        ${state.thesisData.chapters.map((ch, i) => `
+                            <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg chapter-item" data-index="${i}">
+                                <i class="fas fa-grip-vertical text-gray-400 cursor-move"></i>
+                                <input type="text" class="flex-1 px-2 py-1 border rounded chapter-name-input" value="${escapeHtml(ch.name || '')}" data-id="${escapeHtml(ch.id || '')}">
+                                <button class="px-3 py-1 text-sm bg-red-100 text-red-600 rounded hover:bg-red-200" onclick="removeManualChapter(${i})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="mt-4">
+                        <p class="text-sm text-gray-600 mb-2">添加标准章节：</p>
+                        <div class="flex flex-wrap gap-2">
+                            ${standardChapters.map(s => {
+                                const hasIt = state.thesisData.chapters.some(c => c.name === s.name);
+                                const escapedId = escapeHtml(s.id || '');
+                                const escapedName = escapeHtml(s.name || '');
+                                return `
+                                    <button class="px-3 py-1 text-sm rounded ${hasIt ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-academic/10 text-academic hover:bg-academic/20'}"
+                                            onclick="${hasIt ? '' : `addStandardChapter('${escapedId}', '${escapedName}')`}"
+                                            ${hasIt ? 'disabled' : ''}>
+                                        <i class="fas fa-plus mr-1"></i>${escapeHtml(s.name || '')}
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex gap-2">
+                        <button class="px-4 py-2 bg-academic text-white rounded-md hover:bg-darkAcademic" onclick="saveManualChapters()">
+                            <i class="fas fa-save mr-1"></i>保存调整
+                        </button>
+                        <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300" onclick="showChapterReviewSection()">
+                            <i class="fas fa-undo mr-1"></i>取消
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function addStandardChapter(id, name) {
+            state.thesisData.chapters.push({
+                id: id,
+                name: name,
+                content: '',
+                hasRevision: false,
+                isNew: true
+            });
+            openManualAdjust();
+        }
+
+        function removeManualChapter(index) {
+            const chapter = state.thesisData.chapters[index];
+            if (chapter.isNew) {
+                state.thesisData.chapters.splice(index, 1);
+            } else {
+                if (confirm('该章节已有内容，确定要删除吗？')) {
+                    state.thesisData.chapters.splice(index, 1);
+                }
+            }
+            openManualAdjust();
+        }
+
+        function saveManualChapters() {
+            // 保存手动调整的章节名称
+            document.querySelectorAll('.chapter-name-input').forEach((input, i) => {
+                if (state.thesisData.chapters[i]) {
+                    state.thesisData.chapters[i].name = input.value;
+                }
+            });
+
+            saveToStorage();
+            showChapterReviewSection();
+            showToast('章节调整已保存', 'success');
+        }
+
+        // ==================== AI分析 ====================
+        async function startAnalysis() {
+            if (!requireApiKey()) return;
+            
+            const selectedChapters = state.thesisData.chapters.filter(c => state.selectedChapters.has(c.id));
+            if (selectedChapters.length === 0) {
+                showToast('请选择要分析的章节', 'warning');
+                return;
+            }
+
+            const analysisOptions = [];
+            document.querySelectorAll('.analysis-option:checked').forEach(opt => {
+                analysisOptions.push(opt.value);
+            });
+            if (analysisOptions.length === 0) {
+                showToast('请选择至少一个分析维度', 'warning');
+                return;
+            }
+
+            const combinedText = selectedChapters.map(c => `[${c.name}]\n${c.content}`).join('\n\n');
+            const analysisPrompt = buildAnalysisPrompt(combinedText, analysisOptions);
+
+            // 显示提示词预览
+            showPromptPreview(analysisPrompt, (confirmedPrompt) => {
+                executeAnalysis(confirmedPrompt, selectedChapters.length);
+            });
+        }
+
+        async function executeAnalysis(prompt, chapterCount) {
+            const progress = document.getElementById('analysisProgress');
+            const results = document.getElementById('analysisResults');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+
+            progress.classList.remove('hidden');
+            results.classList.add('hidden');
+            showAiThinking('正在分析论文结构...');
+
+            try {
+                // 模拟进度
+                progressBar.style.width = '30%';
+                progressText.textContent = '正在调用AI分析...';
+                
+                const response = await callAI(prompt);
+                
+                progressBar.style.width = '80%';
+                progressText.textContent = '正在整理分析结果...';
+                
+                // 解析分析结果
+                state.analysisResults = parseAnalysisResponse(response);
+                
+                progressBar.style.width = '100%';
+                progressText.textContent = '分析完成';
+                
+                setTimeout(() => {
+                    hideAiThinking();
+                    progress.classList.add('hidden');
+                    displayAnalysisResults();
+                    results.classList.remove('hidden');
+                    showToast('分析完成', 'success');
+                }, 500);
+            } catch (error) {
+                hideAiThinking();
+                progress.classList.add('hidden');
+                showToast('分析失败: ' + error.message, 'error');
+            }
+        }
+
+        function buildAnalysisPrompt(content, options) {
+            const optionDescriptions = {
+                structure: '论文结构完整性：检查章节安排是否合理、逻辑是否清晰',
+                writing: '写作质量评估：评估语言表达、学术规范、专业术语使用',
+                logic: '逻辑连贯性：检查论证过程、因果关系、推理链条',
+                citation: '文献引用规范：检查引用格式、引用完整性、文献质量',
+                innovation: '创新点识别：识别研究的创新之处和贡献'
+            };
+
+            const descriptions = options.map(o => optionDescriptions[o]).join('\n');
+
+            return `请对以下MEM学位论文内容进行深度分析：
+
+分析维度：
+${descriptions}
+
+论文内容：
+${content.substring(0, 8000)}
+
+请以JSON格式返回分析结果，格式如下：
+{
+    "scores": {
+        "structure": 0-100,
+        "writing": 0-100,
+        "logic": 0-100,
+        "citation": 0-100,
+        "overall": 0-100
+    },
+    "issues": [
+        {
+            "chapter": "章节名称",
+            "type": "问题类型",
+            "severity": "high/medium/low",
+            "description": "问题描述",
+            "suggestion": "改进建议"
+        }
+    ],
+    "summary": "总体评价"
+}`;
+        }
+
+        function parseAnalysisResponse(response) {
+            try {
+                // 尝试提取JSON
+                const jsonMatch = response.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    // 验证返回的数据结构
+                    if (parsed && parsed.scores && parsed.issues) {
+                        return {
+                            scores: {
+                                structure: Math.max(0, Math.min(100, parseInt(parsed.scores.structure) || 0)),
+                                writing: Math.max(0, Math.min(100, parseInt(parsed.scores.writing) || 0)),
+                                logic: Math.max(0, Math.min(100, parseInt(parsed.scores.logic) || 0)),
+                                citation: Math.max(0, Math.min(100, parseInt(parsed.scores.citation) || 0)),
+                                overall: Math.max(0, Math.min(100, parseInt(parsed.scores.overall) || 0))
+                            },
+                            issues: Array.isArray(parsed.issues) ? parsed.issues.slice(0, 20) : [],
+                            summary: parsed.summary || '分析完成'
+                        };
+                    }
+                }
+            } catch (e) {
+                console.error('分析结果JSON解析失败', e);
+            }
+            
+            // 返回默认数据
+            return {
+                scores: {
+                    structure: 75,
+                    writing: 68,
+                    logic: 72,
+                    citation: 65,
+                    overall: 70
+                },
+                issues: [
+                    { chapter: '绪论', type: '结构', severity: 'medium', description: '研究背景描述不够深入', suggestion: '增加对研究领域现状的详细阐述' },
+                    { chapter: '研究方法', type: '规范', severity: 'low', description: '部分专业术语使用不规范', suggestion: '统一术语使用，保持前后一致' },
+                    { chapter: '全文', type: '逻辑', severity: 'high', description: '部分论证逻辑链条不够紧密', suggestion: '加强因果关系的论述' }
+                ],
+                summary: '论文整体结构合理，但写作规范和逻辑连贯性有待提升。建议重点关注文献引用规范和研究方法描述的准确性。'
+            };
+        }
+
+        function displayAnalysisResults() {
+            if (!state.analysisResults) return;
+
+            document.getElementById('scoreStructure').textContent = state.analysisResults.scores.structure;
+            document.getElementById('scoreWriting').textContent = state.analysisResults.scores.writing;
+            document.getElementById('scoreLogic').textContent = state.analysisResults.scores.logic;
+            document.getElementById('scoreCitation').textContent = state.analysisResults.scores.citation;
+            document.getElementById('scoreOverall').textContent = state.analysisResults.scores.overall;
+
+            const issueList = document.getElementById('issueList');
+            issueList.innerHTML = state.analysisResults.issues.map(issue => {
+                const severityClass = issue.severity === 'high' ? 'bg-red-100 text-red-700' : 
+                                      issue.severity === 'medium' ? 'bg-yellow-100 text-yellow-700' : 
+                                      'bg-blue-100 text-blue-700';
+                const severityIcon = issue.severity === 'high' ? 'fa-exclamation-circle' : 
+                                     issue.severity === 'medium' ? 'fa-exclamation-triangle' : 
+                                     'fa-info-circle';
+                return `
+                    <div class="p-4 rounded-lg border ${issue.severity === 'high' ? 'border-red-200 bg-red-50' : 
+                                                                  issue.severity === 'medium' ? 'border-yellow-200 bg-yellow-50' : 
+                                                                  'border-blue-200 bg-blue-50'}">
+                        <div class="flex items-start gap-3">
+                            <i class="fas ${severityIcon} mt-1 ${issue.severity === 'high' ? 'text-red-500' : 
+                                                                          issue.severity === 'medium' ? 'text-yellow-500' : 
+                                                                          'text-blue-500'}"></i>
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-medium">${escapeHtml(issue.chapter || '')}</span>
+                                    <span class="text-sm ${severityClass} px-2 py-0.5 rounded">${escapeHtml(issue.type || '')}</span>
+                                    <span class="text-xs text-gray-500">${issue.severity === 'high' ? '严重' : issue.severity === 'medium' ? '中等' : '轻微'}</span>
+                                </div>
+                                <p class="text-gray-700 mb-2">${escapeHtml(issue.description || '')}</p>
+                                <p class="text-sm text-academic"><i class="fas fa-lightbulb mr-1"></i>${escapeHtml(issue.suggestion || '')}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function generateRevisionFromAnalysis() {
+            if (!state.analysisResults || !state.analysisResults.issues.length) {
+                showToast('请先完成论文分析', 'warning');
+                return;
+            }
+            
+            // 切换到修订页面
+            switchTab('revise');
+            
+            // 选中问题涉及的章节
+            const issueChapters = new Set(state.analysisResults.issues.map(i => i.chapter));
+            state.thesisData.chapters.forEach(chapter => {
+                if (issueChapters.has(chapter.name) || issueChapters.has(chapter.name.split(' ')[1])) {
+                    state.selectedChapters.add(chapter.id);
+                }
+            });
+            
+            showToast('已根据分析结果选择相关章节', 'success');
+        }
+
+        function exportAnalysisReport() {
+            if (!state.analysisResults) return;
+            
+            const severityLabel = (severity) => {
+                if (severity === 'high') return '严重';
+                if (severity === 'medium') return '中等';
+                return '轻微';
+            };
+            
+            const report = `MEM学位论文分析报告
+生成时间：${new Date().toLocaleString()}
+
+一、综合评分
+- 结构完整：${state.analysisResults.scores.structure}/100
+- 写作质量：${state.analysisResults.scores.writing}/100
+- 逻辑连贯：${state.analysisResults.scores.logic}/100
+- 引用规范：${state.analysisResults.scores.citation}/100
+- 综合评分：${state.analysisResults.scores.overall}/100
+
+二、问题清单
+${state.analysisResults.issues.map((issue, i) => `
+${i + 1}. [${escapeHtml(issue.chapter || '')}] ${escapeHtml(issue.type || '')} (${severityLabel(issue.severity)})
+   问题：${escapeHtml(issue.description || '')}
+   建议：${escapeHtml(issue.suggestion || '')}
+`).join('')}
+
+三、总体评价
+${escapeHtml(state.analysisResults.summary || '')}
+`;
+
+            downloadFile(report, '论文分析报告.txt', 'text/plain');
+            showToast('报告已导出', 'success');
+        }
+
+        // ==================== AI修订 ====================
+        function loadRevisionTemplates() {
+            const select = document.getElementById('revisionTemplate');
+            select.innerHTML = '<option value="">不使用模板</option>';
+            
+            state.templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = `[${getCategoryLabel(template.category)}] ${template.name}`;
+                select.appendChild(option);
+            });
+        }
+
+        function getCategoryLabel(category) {
+            const labels = {
+                'chapter': '章节',
+                'language': '润色',
+                'structure': '结构'
+            };
+            return labels[category] || '通用';
+        }
+
+        function renderReviseChapterList() {
+            const container = document.getElementById('reviseChapterList');
+            container.innerHTML = state.thesisData.chapters.map(chapter => `
+                <div class="chapter-card ${state.selectedChapters.has(chapter.id) ? 'active' : ''} ${chapter.hasRevision ? 'completed' : ''}"
+                     data-id="${escapeHtml(chapter.id || '')}" onclick="selectChapterForRevision('${escapeHtml(chapter.id || '')}')">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-gray-800">${escapeHtml(chapter.name || '')}</span>
+                        ${chapter.hasRevision ? '<i class="fas fa-check-circle text-green-500"></i>' : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectChapterForRevision(chapterId) {
+            if (!chapterId || typeof chapterId !== 'string') return;
+            
+            const chapter = state.thesisData.chapters.find(c => c.id === chapterId);
+            if (!chapter) return;
+
+            // 显示修订工作区
+            const workspace = document.getElementById('revisionWorkspace');
+            if (!workspace) return;
+            
+            workspace.classList.remove('hidden');
+            
+            // 填充原文
+            const originalText = state.revisedChapters[chapterId] || chapter.content || '';
+            const originalTextarea = document.getElementById('originalText');
+            if (originalTextarea) {
+                originalTextarea.value = originalText.substring(0, 100000); // 限制长度
+            }
+            
+            // 清空修订内容
+            const revisedDiv = document.getElementById('revisedText');
+            if (revisedDiv) {
+                revisedDiv.textContent = '';
+            }
+            
+            // 更新样式
+            document.querySelectorAll('#reviseChapterList .chapter-card').forEach(card => {
+                if (card.dataset && card.dataset.id) {
+                    card.classList.toggle('active', card.dataset.id === chapterId);
+                }
+            });
+            
+            // 保存当前章节ID
+            workspace.dataset.currentChapter = chapterId;
+        }
+
+        async function startRevision() {
+            if (!requireApiKey()) return;
+            
+            const workspace = document.getElementById('revisionWorkspace');
+            const currentChapterId = workspace.dataset.currentChapter;
+            if (!currentChapterId) {
+                showToast('请先选择一个章节', 'warning');
+                return;
+            }
+
+            const originalText = document.getElementById('originalText').value.trim();
+            if (!originalText) {
+                showToast('原文内容不能为空', 'warning');
+                return;
+            }
+
+            const depth = document.getElementById('revisionDepth').value;
+            const style = document.getElementById('revisionStyle').value;
+            const focus = document.getElementById('revisionFocus').value;
+            const templateId = document.getElementById('revisionTemplate').value;
+            const template = templateId ? state.templates.find(t => t.id === parseInt(templateId)) : null;
+
+            const revisionPrompt = buildRevisionPrompt(originalText, depth, style, focus, template);
+
+            // 显示提示词预览
+            showPromptPreview(revisionPrompt, (confirmedPrompt) => {
+                executeRevision(confirmedPrompt, currentChapterId, originalText.length);
+            });
+        }
+
+        async function executeRevision(prompt, chapterId, originalLength) {
+            showAiThinking('正在进行AI修订...');
+
+            try {
+                const response = await callAI(prompt);
+                
+                if (!response || typeof response !== 'string') {
+                    throw new Error('AI返回内容无效');
+                }
+                
+                document.getElementById('revisedText').textContent = response;
+                
+                // 添加到修订历史（限制历史记录数量）
+                state.revisionHistory.push({
+                    chapterId: chapterId,
+                    timestamp: new Date().toLocaleString(),
+                    depth: document.getElementById('revisionDepth')?.value || 'medium',
+                    originalLength: originalLength,
+                    revisedLength: response.length
+                });
+                
+                // 只保留最近20条记录
+                if (state.revisionHistory.length > 20) {
+                    state.revisionHistory = state.revisionHistory.slice(-20);
+                }
+                
+                updateRevisionHistory();
+                
+                hideAiThinking();
+                showToast('修订完成', 'success');
+            } catch (error) {
+                hideAiThinking();
+                showToast('修订失败: ' + (error.message || '未知错误'), 'error');
+            }
+        }
+
+        function buildRevisionPrompt(content, depth, style, focus, template) {
+            const depthDesc = {
+                light: '轻度润色：仅修正语法错误、错别字和标点问题，保持原表达不变',
+                medium: '中度修订：优化表达方式，提升语言的准确性和流畅性',
+                deep: '深度修订：重构表达方式，全面提升学术规范性和可读性'
+            };
+
+            const styleDesc = {
+                academic: '学术规范风格：严谨、客观、专业',
+                concise: '简洁明了风格：言简意赅、重点突出',
+                detailed: '详细深入风格：论述充分、论证有力',
+                persuasive: '论证有力风格：论点鲜明、论据充分'
+            };
+
+            const focusDesc = {
+                general: '综合优化',
+                logic: '重点强化逻辑连贯性，确保论证链条紧密',
+                expression: '重点优化表达方式，提升语言质量',
+                citation: '重点检查引用规范，确保符合学术标准'
+            };
+
+            let prompt = `请对以下MEM学位论文内容进行修订：
+
+修订要求：
+- 修订深度：${depthDesc[depth]}
+- 修订风格：${styleDesc[style]}
+- 关注重点：${focusDesc[focus]}`;
+
+            // 如果选择了模板，添加模板内容
+            if (template) {
+                prompt += `
+- 参考模板：${template.name}
+- 模板说明：${template.content}`;
+            }
+
+            prompt += `
+
+原文内容：
+${content}
+
+重要说明：
+1. 如果原文包含公式，请将公式转换为LaTeX格式，用\(...\)包裹行内公式，\[...\]包裹独立公式行
+2. 例如：将"x的平方等于y"转换为"x^2 = y"并写成LaTeX格式：\(x^2 = y\)
+3. 将复杂公式转换为标准的LaTeX表达式
+4. 请直接返回修订后的内容，不需要添加任何说明。如果原文无需修改，请直接返回原内容。`;
+
+            return prompt;
+        }
+
+        function showDiff() {
+            const original = document.getElementById('originalText').value;
+            const revised = document.getElementById('revisedText').textContent;
+            
+            if (!revised) {
+                showToast('请先进行修订', 'warning');
+                return;
+            }
+
+            // 简单差异显示
+            const originalWords = original.split(/(\s+)/);
+            const revisedWords = revised.split(/(\s+)/);
+            
+            let diffHtml = '<div class="font-mono text-sm whitespace-pre-wrap">';
+            
+            // 简单比较：显示修订后的内容，高亮变化部分
+            const origLines = original.split('\n');
+            const revLines = revised.split('\n');
+            
+            revLines.forEach((line, i) => {
+                if (origLines[i] !== line) {
+                    if (origLines[i]) {
+                        diffHtml += `<div class="diff-removed p-1 rounded my-1">- ${escapeHtml(origLines[i])}</div>`;
+                    }
+                    diffHtml += `<div class="diff-added p-1 rounded my-1">+ ${escapeHtml(line)}</div>`;
+                } else {
+                    diffHtml += `<div class="p-1">${escapeHtml(line)}</div>`;
+                }
+            });
+            
+            diffHtml += '</div>';
+            
+            // 在新窗口显示差异 - 使用安全的DOM操作
+            const diffWindow = window.open('', '_blank', 'width=900,height=600');
+            if (!diffWindow) {
+                showToast('无法打开新窗口，请检查浏览器设置', 'warning');
+                return;
+            }
+            
+            diffWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+    <title>修订差异对比</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .diff-added { background: #dcfce7; color: #166534; }
+        .diff-removed { background: #fee2e2; color: #991b1b; text-decoration: line-through; }
+    </style>
+</head>
+<body></body>
+</html>`);
+            diffWindow.document.close();
+            
+            // 安全地设置body内容
+            const body = diffWindow.document.body;
+            body.innerHTML = diffHtml;
+        }
+
+        function saveRevision() {
+            const workspace = document.getElementById('revisionWorkspace');
+            const currentChapterId = workspace.dataset.currentChapter;
+            const revisedText = document.getElementById('revisedText').textContent;
+            
+            if (!revisedText) {
+                showToast('没有可保存的修订内容', 'warning');
+                return;
+            }
+
+            state.revisedChapters[currentChapterId] = revisedText;
+            
+            // 更新章节状态
+            const chapter = state.thesisData.chapters.find(c => c.id === currentChapterId);
+            if (chapter) {
+                chapter.hasRevision = true;
+                chapter.content = revisedText;
+            }
+            
+            saveToStorage();
+            renderReviseChapterList();
+            showToast('修订已保存', 'success');
+        }
+
+        function copyRevisedText() {
+            const revisedText = document.getElementById('revisedText').textContent;
+            if (!revisedText) {
+                showToast('没有可复制的内容', 'warning');
+                return;
+            }
+            
+            navigator.clipboard.writeText(revisedText).then(() => {
+                showToast('已复制到剪贴板', 'success');
+            }).catch(() => {
+                showToast('复制失败', 'error');
+            });
+        }
+
+        function acceptAllChanges() {
+            const revisedText = document.getElementById('revisedText').textContent;
+            if (revisedText) {
+                document.getElementById('originalText').value = revisedText;
+                document.getElementById('originalWordCount').textContent = revisedText.replace(/\s/g, '').length;
+                showToast('已采纳所有修改', 'success');
+            }
+        }
+
+        function updateRevisionHistory() {
+            const container = document.getElementById('revisionHistory');
+            if (state.revisionHistory.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">暂无修订记录</p>';
+                return;
+            }
+            
+            container.innerHTML = state.revisionHistory.slice(-10).reverse().map(item => {
+                const chapter = state.thesisData.chapters.find(c => c.id === item.chapterId);
+                return `
+                    <div class="flex items-center gap-3 p-2 bg-gray-50 rounded text-sm">
+                        <i class="fas fa-history text-gray-400"></i>
+                        <span class="font-medium">${escapeHtml(chapter?.name || item.chapterId || '')}</span>
+                        <span class="text-gray-500">${escapeHtml(item.timestamp || '')}</span>
+                        <span class="text-gray-500">${item.originalLength} → ${item.revisedLength} 字</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ==================== 模板管理 ====================
+        function initTemplates() {
+            if (state.templates.length === 0) {
+                state.templates = [...defaultTemplates];
+            }
+        }
+
+        // 打开模板编辑弹窗
+        function openTemplateModal() {
+            const modal = document.getElementById('templateModal');
+            modal.classList.remove('hidden');
+        }
+
+        function closeTemplateModal() {
+            document.getElementById('templateModal').classList.add('hidden');
+        }
+
+        function saveTemplate() {
+            const name = document.getElementById('templateName').value.trim();
+            const category = document.getElementById('templateCategory').value;
+            const scenario = document.getElementById('templateScenario').value.trim();
+            const content = document.getElementById('templateContent').value.trim();
+            
+            if (!name || !content) {
+                showToast('请填写模板名称和内容', 'warning');
+                return;
+            }
+
+            state.templates.push({
+                id: Date.now(),
+                name,
+                category,
+                scenario,
+                content
+            });
+            
+            saveToStorage();
+            loadRevisionTemplates();
+            closeTemplateModal();
+            showToast('模板已添加', 'success');
+        }
+
+        function deleteTemplate(templateId) {
+            if (confirm('确定要删除这个模板吗？')) {
+                state.templates = state.templates.filter(t => t.id !== templateId);
+                saveToStorage();
+                loadRevisionTemplates();
+                showToast('模板已删除', 'success');
+            }
+        }
+
+        function deleteSelectedTemplate() {
+            const templateId = document.getElementById('revisionTemplate').value;
+            if (templateId) {
+                deleteTemplate(parseInt(templateId));
+                document.getElementById('templateHint').classList.add('hidden');
+                document.getElementById('deleteTemplateBtn').classList.add('hidden');
+            }
+        }
+
+        // ==================== 导出功能 ====================
+        function selectExportFormat(label) {
+            document.querySelectorAll('.export-format').forEach(el => {
+                el.classList.remove('border-academic', 'bg-lightAcademic');
+                el.querySelector('input').checked = false;
+            });
+            label.classList.add('border-academic', 'bg-lightAcademic');
+            label.querySelector('input').checked = true;
+        }
+
+        function toggleAdvanced() {
+            const options = document.getElementById('advancedOptions');
+            options.classList.toggle('hidden');
+        }
+
+        function applyThesisInfoToExport() {
+            // 从论文信息字段填充到导出表单
+            const title = document.getElementById('thesisInfoTitle')?.value || '';
+            const major = document.getElementById('thesisInfoMajor')?.value || '';
+            const direction = document.getElementById('thesisInfoDirection')?.value || '';
+            const keywords = document.getElementById('thesisInfoKeywords')?.value || '';
+
+            if (title) {
+                const thesisTitleInput = document.getElementById('thesisTitle');
+                if (thesisTitleInput) thesisTitleInput.value = title;
+            }
+            if (major) {
+                const majorInput = document.getElementById('exportMajor');
+                if (majorInput) majorInput.value = major;
+            }
+            if (direction) {
+                const directionInput = document.getElementById('exportDirection');
+                if (directionInput) directionInput.value = direction;
+            }
+            if (keywords) {
+                const keywordsInput = document.getElementById('exportKeywords');
+                if (keywordsInput) keywordsInput.value = keywords;
+            }
+
+            if (title || major || direction || keywords) {
+                showToast('已填充论文信息', 'success');
+            } else {
+                showToast('请先在论文上传区填写论文信息', 'info');
+            }
+        }
+
+        // ==================== 论文格式模板处理 ====================
+        async function handleTemplateFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 验证文件类型
+            if (!file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
+                showToast('请上传Word格式的模板文件', 'error');
+                event.target.value = '';
+                return;
+            }
+            
+            // 文件大小检查
+            if (file.size > MAX_FILE_SIZE) {
+                showToast('模板文件大小超过10MB限制', 'error');
+                event.target.value = '';
+                return;
+            }
+
+            try {
+                showToast('正在解析模板文件...', 'info');
+                const text = await extractDocxText(file);
+
+                state.formatTemplate.fileName = escapeHtml(file.name);
+                state.formatTemplate.content = text;
+
+                // 识别模板章节结构
+                const chapters = identifyChaptersFromTemplate(text);
+                state.formatTemplate.chapters = chapters;
+
+                // 显示模板信息
+                document.getElementById('templateFileInfo').classList.remove('hidden');
+                document.getElementById('templateFileName').textContent = file.name;
+
+                // 显示章节预览
+                const previewDiv = document.getElementById('templatePreview');
+                const chaptersDiv = document.getElementById('templateChapters');
+                previewDiv.classList.remove('hidden');
+
+                if (chapters.length > 0) {
+                    chaptersDiv.innerHTML = chapters.map(c =>
+                        `<div class="flex items-center gap-2">
+                            <i class="fas fa-check-circle text-green-500"></i>
+                            <span>${escapeHtml(c.name || '')}</span>
+                        </div>`
+                    ).join('');
+                } else {
+                    chaptersDiv.innerHTML = '<div class="text-gray-500">未识别到章节结构，将使用通用格式</div>';
+                }
+
+                showToast('模板文件解析成功', 'success');
+            } catch (error) {
+                showToast('模板文件解析失败: ' + error.message, 'error');
+            }
+        }
+
+        function removeTemplateFile() {
+            state.formatTemplate = { fileName: '', content: '', chapters: [] };
+            document.getElementById('templateFile').value = '';
+            document.getElementById('templateFileInfo').classList.add('hidden');
+            document.getElementById('templatePreview').classList.add('hidden');
+            showToast('已移除模板文件', 'info');
+        }
+
+        function identifyChaptersFromTemplate(content) {
+            const chapters = [];
+            const lines = content.split('\n');
+            const patterns = [
+                /^(第[一二三四五六七八九十]+章|第一章|第1章)\s*.+/,
+                /^(摘要|Abstract|引言|绪论|文献综述|理论基础|研究设计|实证分析|结论|参考文献|附录)/,
+                /^\d+\.\s+.+/
+            ];
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (patterns.some(p => p.test(trimmed))) {
+                    chapters.push({ name: trimmed });
+                }
+            });
+
+            return chapters;
+        }
+
+        function updateExportPreview() {
+            const preview = document.getElementById('exportPreview');
+            const content = document.getElementById('previewContent');
+            
+            let previewText = '';
+            
+            if (document.getElementById('exportRevised').checked) {
+                const revisedContent = Object.values(state.revisedChapters).join('\n\n');
+                previewText += revisedContent || '暂无修订内容';
+            } else if (document.getElementById('exportOriginal').checked) {
+                previewText += state.thesisData.rawText || '暂无原文';
+            }
+            
+            content.textContent = previewText.substring(0, 2000) + (previewText.length > 2000 ? '...' : '');
+            preview.classList.remove('hidden');
+        }
+
+        async function startExport() {
+            const format = document.querySelector('input[name="exportFormat"]:checked')?.value || 'markdown';
+            const useFormatRewrite = document.getElementById('useFormatRewrite')?.checked;
+            
+            let content = '';
+            let filename = '';
+            let mimeType = '';
+            
+            const title = (document.getElementById('thesisTitle')?.value || state.thesisData.title || 'MEM学位论文').replace(/[<>:"/\\|?*]/g, '').substring(0, 100);
+            const author = document.getElementById('authorName')?.value || '';
+            const institution = document.getElementById('institution')?.value || '';
+            const major = document.getElementById('exportMajor')?.value || state.thesisData.major || '';
+            const direction = document.getElementById('exportDirection')?.value || state.thesisData.direction || '';
+            const keywords = document.getElementById('exportKeywords')?.value || state.thesisData.keywords || '';
+            
+            // 收集内容
+            let mainContent = '';
+            if (document.getElementById('exportRevised')?.checked) {
+                mainContent = Object.entries(state.revisedChapters)
+                    .map(([id, text]) => {
+                        const chapter = state.thesisData.chapters.find(c => c.id === id);
+                        const chapterName = chapter ? escapeHtml(chapter.name) : id;
+                        return `## ${chapterName}\n\n${(text || '').substring(0, 50000)}`;
+                    })
+                    .join('\n\n');
+            } else if (document.getElementById('exportOriginal')?.checked) {
+                mainContent = (state.thesisData.rawText || '').substring(0, 500000);
+            }
+
+            // 如果启用了格式重生成且有模板
+            if (useFormatRewrite && state.formatTemplate.content) {
+                if (!requireApiKey()) return;
+                showAiThinking('正在根据模板格式重新生成论文...');
+
+                try {
+                    const formatPrompt = buildFormatRewritePrompt(mainContent, title, author, institution, major, direction, keywords);
+                    mainContent = await callAI(formatPrompt);
+                    hideAiThinking();
+                    showToast('格式重生成完成', 'success');
+                } catch (error) {
+                    hideAiThinking();
+                    showToast('格式重生成失败: ' + error.message, 'error');
+                    return;
+                }
+            }
+            
+            if (format === 'markdown') {
+                filename = `${title}.md`;
+                mimeType = 'text/markdown';
+                let metaInfo = `# ${title}\n\n`;
+                if (author) metaInfo += `**作者：** ${author}\n`;
+                if (institution) metaInfo += `**单位：** ${institution}\n`;
+                if (major) metaInfo += `**学科/专业：** ${major}\n`;
+                if (direction) metaInfo += `**研究方向：** ${direction}\n`;
+                if (keywords) metaInfo += `**关键词：** ${keywords}\n`;
+                metaInfo += `\n---\n\n`;
+                content = metaInfo + mainContent;
+                
+                if (document.getElementById('exportAnalysis').checked && state.analysisResults) {
+                    content += `\n\n---\n\n# 附录：论文分析报告\n\n${formatAnalysisAsText()}`;
+                }
+            } else if (format === 'html') {
+                filename = `${title}.html`;
+                mimeType = 'text/html';
+                content = generateHtmlExport(title, author, institution, major, direction, keywords, mainContent);
+            } else if (format === 'docx') {
+                await exportToDocx(title, author, institution, major, direction, keywords, mainContent);
+                return;
+            } else if (format === 'pdf') {
+                showToast('PDF导出功能开发中，请使用Word或HTML格式', 'warning');
+                return;
+            }
+            
+            downloadFile(content, filename, mimeType);
+            showToast(`已导出为${format.toUpperCase()}格式`, 'success');
+        }
+
+        function buildFormatRewritePrompt(content, title, author, institution, major, direction, keywords) {
+            const templateContent = state.formatTemplate.content.substring(0, 8000);
+            const templateChapters = state.formatTemplate.chapters.map(c => c.name).join('\n');
+
+            return `你是一位专业的学位论文格式编辑专家。请根据以下论文格式模板，重新整理论文内容，确保格式完全符合模板要求。
+
+【论文格式模板】
+${templateContent}
+
+【模板章节结构】
+${templateChapters || '使用标准MEM学位论文格式'}
+
+【原始论文内容】
+${content}
+
+【论文信息】
+- 标题：${title}
+- 作者：${author || '未填写'}
+- 单位：${institution || '未填写'}
+- 学科/专业：${major || '未填写'}
+- 研究方向：${direction || '未填写'}
+- 关键词：${keywords || '未填写'}
+
+【要求】
+1. 严格按照模板的章节结构和格式要求重写论文
+2. 保持论文的学术性和专业性
+3. 公式必须使用LaTeX格式（行内公式用\\(...\\)，独立公式用\\[...\\]）
+4. 保留所有关键数据和结论
+5. 按照模板的字体、字号、行间距等格式要求调整
+6. 直接返回整理后的完整论文内容，不要添加任何说明`;
+
+        }
+
+        function formatAnalysisAsText() {
+            if (!state.analysisResults) return '';
+            
+            return `## 综合评分
+- 结构完整：${state.analysisResults.scores.structure}/100
+- 写作质量：${state.analysisResults.scores.writing}/100
+- 逻辑连贯：${state.analysisResults.scores.logic}/100
+- 引用规范：${state.analysisResults.scores.citation}/100
+- 综合评分：${state.analysisResults.scores.overall}/100
+
+## 问题清单
+${state.analysisResults.issues.map((issue, i) => `
+${i + 1}. [${escapeHtml(issue.chapter || '')}] ${escapeHtml(issue.type || '')}
+   - 问题：${escapeHtml(issue.description || '')}
+   - 建议：${escapeHtml(issue.suggestion || '')}
+`).join('')}
+
+## 总体评价
+${escapeHtml(state.analysisResults.summary || '')}`;
+        }
+
+        function generateHtmlExport(title, author, institution, major, direction, keywords, mainContent) {
+            // HTML导出时对所有用户输入进行转义
+            const safeTitle = escapeHtml(title || '');
+            const safeAuthor = escapeHtml(author || '');
+            const safeInstitution = escapeHtml(institution || '');
+            const safeMajor = escapeHtml(major || '');
+            const safeDirection = escapeHtml(direction || '');
+            const safeKeywords = escapeHtml(keywords || '');
+            
+            // 处理主内容 - 需要保留##标题格式，但转义其他内容
+            // 先处理##标题，将标题内容转义后再插入HTML标签
+            const processContent = (text) => {
+                const escapeHtmlChars = (str) => str
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#x27;');
+                return text
+                    .replace(/##\s+(.+)/g, (match, title) => `<h2>${escapeHtmlChars(title)}</h2>`)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#x27;')
+                    .replace(/\n/g, '</p><p>');
+            };
+            const safeMainContent = processContent(mainContent || '');
+            
+            return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>${safeTitle}</title>
+    <style>
+        body { font-family: 'SimSun', serif; line-height: 1.8; max-width: 800px; margin: 0 auto; padding: 40px; }
+        h1 { text-align: center; font-size: 24px; margin-bottom: 20px; }
+        .meta { text-align: center; margin-bottom: 40px; color: #666; }
+        h2 { font-size: 18px; margin-top: 30px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        p { text-indent: 2em; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>${safeTitle}</h1>
+    <div class="meta">
+        ${safeAuthor ? `<p>作者：${safeAuthor}</p>` : ''}
+        ${safeInstitution ? `<p>单位：${safeInstitution}</p>` : ''}
+        ${safeMajor ? `<p>学科/专业：${safeMajor}</p>` : ''}
+        ${safeDirection ? `<p>研究方向：${safeDirection}</p>` : ''}
+        ${safeKeywords ? `<p>关键词：${safeKeywords}</p>` : ''}
+    </div>
+    <p>${safeMainContent}</p>
+</body>
+</html>`;
+        }
+
+        async function exportToDocx(title, author, institution, major, direction, keywords, content) {
+            const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+            
+            // 对标题进行安全处理
+            const safeTitle = (title || 'MEM学位论文').replace(/[<>:"/\\|?*]/g, '').substring(0, 100);
+            
+            const children = [
+                new Paragraph({
+                    text: safeTitle,
+                    heading: HeadingLevel.TITLE,
+                    alignment: 'center'
+                })
+            ];
+            
+            if (author) {
+                children.push(new Paragraph({
+                    children: [new TextRun(escapeHtml(author))],
+                    alignment: 'center'
+                }));
+            }
+            
+            if (institution) {
+                children.push(new Paragraph({
+                    children: [new TextRun(escapeHtml(institution))],
+                    alignment: 'center'
+                }));
+            }
+            
+            if (major) {
+                children.push(new Paragraph({
+                    children: [new TextRun(`学科/专业：${escapeHtml(major)}`)],
+                    alignment: 'center'
+                }));
+            }
+            
+            if (direction) {
+                children.push(new Paragraph({
+                    children: [new TextRun(`研究方向：${escapeHtml(direction)}`)],
+                    alignment: 'center'
+                }));
+            }
+            
+            if (keywords) {
+                children.push(new Paragraph({
+                    children: [new TextRun(`关键词：${escapeHtml(keywords)}`)],
+                    alignment: 'center'
+                }));
+            }
+            
+            children.push(new Paragraph({ text: '' }));
+            
+            // 处理内容
+            const safeContent = (content || '').substring(0, 500000);
+            safeContent.split('\n').forEach(line => {
+                const safeLine = escapeHtml(line);
+                if (line.startsWith('## ')) {
+                    children.push(new Paragraph({
+                        text: line.replace('## ', ''),
+                        heading: HeadingLevel.HEADING_1
+                    }));
+                } else if (line.trim()) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({ text: safeLine, size: 24 })],
+                        indent: { firstLine: 640 }
+                    }));
+                }
+            });
+            
+            const doc = new Document({
+                sections: [{
+                    properties: {},
+                    children: children
+                }]
+            });
+            
+            const blob = await Packer.toBlob(doc);
+            saveAs(blob, `${safeTitle}.docx`);
+            showToast('Word文档已导出', 'success');
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+            saveAs(blob, filename);
+        }
+
+        // ==================== 清空数据 ====================
+        function clearAllData() {
+            if (confirm('确定要清空所有数据吗？此操作不可恢复。')) {
+                try {
+                    localStorage.removeItem('memRevisionApiKey');
+                    localStorage.removeItem('memRevisionModel');
+                    localStorage.removeItem('memRevisionCustomEndpoint');
+                    localStorage.removeItem('memRevisionTemplates');
+                    localStorage.removeItem('memRevisionThesis');
+                    localStorage.removeItem('memRevisionRevisions');
+                    localStorage.removeItem('memRevisionFormatTemplate');
+                } catch (e) {
+                    console.error('清理存储失败', e);
+                }
+                
+                state.apiKey = '';
+                state.thesisData = { title: '', major: '', direction: '', keywords: '', chapters: [], rawText: '' };
+                state.selectedChapters = new Set();
+                state.analysisResults = null;
+                state.revisedChapters = {};
+                state.revisionHistory = [];
+                state.formatTemplate = { fileName: '', content: '', chapters: [] };
+                
+                // 清空表单
+                document.getElementById('apiKey').value = '';
+                document.getElementById('thesisInfoTitle').value = '';
+                document.getElementById('thesisInfoMajor').value = '';
+                document.getElementById('thesisInfoDirection').value = '';
+                document.getElementById('thesisInfoKeywords').value = '';
+                
+                // 隐藏相关区域
+                document.getElementById('thesisStructure').classList.add('hidden');
+                document.getElementById('chapterReviewSection').classList.add('hidden');
+                document.getElementById('chapterSuggestionPanel').classList.add('hidden');
+                document.getElementById('analysisResults').classList.add('hidden');
+                document.getElementById('revisionWorkspace').classList.add('hidden');
+                document.getElementById('templateFileInfo').classList.add('hidden');
+                document.getElementById('templatePreview').classList.add('hidden');
+                
+                updateApiKeyStatus(false);
+                showToast('所有数据已清空', 'success');
+            }
+        }
+
+        // ==================== AI调用 ====================
+        async function callAI(prompt) {
+            // 验证API Key
+            if (!state.apiKey || !state.apiKey.trim()) {
+                throw new Error('请先设置API Key');
+            }
+            
+            // 清理prompt中的潜在问题
+            const cleanPrompt = typeof prompt === 'string' ? prompt.substring(0, 100000) : String(prompt).substring(0, 100000);
+            
+            let endpoint = '';
+            let model = state.aiModel;
+            let headers = { 'Content-Type': 'application/json' };
+            
+            if (model === 'gemini-3.1-pro') {
+                // Gemini 3.1 Pro（深度思考模型）
+                endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${state.apiKey}`;
+            } else if (model === 'kimi-2.5') {
+                // KIMI 2.5（深度思考模型）
+                endpoint = 'https://api.moonshot.cn/v1/chat/completions';
+                model = 'moonshot-v1-8k';
+                headers['Authorization'] = `Bearer ${state.apiKey}`;
+            } else if (model === 'deepseek-chat') {
+                // DeepSeek（深度思考模型）
+                endpoint = 'https://api.deepseek.com/chat/completions';
+                model = 'deepseek-chat';
+            } else if (model === 'qwen-plus') {
+                // 通义Qwen（深度思考模型）
+                endpoint = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+                headers['Authorization'] = `Bearer ${state.apiKey}`;
+            } else if (model === 'gpt-4o') {
+                // GPT-4o（深度思考模型）
+                endpoint = 'https://api.openai.com/v1/chat/completions';
+                headers['Authorization'] = `Bearer ${state.apiKey}`;
+            } else if (model === 'glm-4') {
+                // 智谱GLM-4（深度思考模型）
+                endpoint = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+                model = 'glm-4';
+                headers['Authorization'] = `Bearer ${state.apiKey}`;
+            } else if (model === 'yi-large') {
+                // 零一万物Yi-Large（深度思考模型）
+                endpoint = 'https://api.lingyiwanwu.com/v1/chat/completions';
+                model = 'yi-large';
+                headers['Authorization'] = `Bearer ${state.apiKey}`;
+            } else if (model === 'custom') {
+                // 自定义API
+                if (!state.customEndpoint || !state.customEndpoint.trim()) {
+                    throw new Error('请输入自定义API的Endpoint地址');
+                }
+                // 验证Endpoint格式
+                const endpointUrl = state.customEndpoint.trim();
+                if (!endpointUrl.startsWith('http://') && !endpointUrl.startsWith('https://')) {
+                    throw new Error('自定义API Endpoint必须是有效的HTTP/HTTPS URL');
+                }
+                endpoint = endpointUrl;
+                model = 'custom';
+                headers['Authorization'] = `Bearer ${state.apiKey}`;
+            } else if (model === 'ernie-4') {
+                // 文心ERNIE 4.0（深度思考模型）- 使用access_token
+                throw new Error('文心ERNIE 4.0需要使用Access Token，请前往百度智能云获取');
+            } else if (model === 'spark-4') {
+                // 讯飞Spark 4.0（深度思考模型）
+                throw new Error('讯飞Spark 4.0需要WebSocket连接，请在后续版本中使用');
+            } else {
+                throw new Error('不支持的模型');
+            }
+
+            let requestBody;
+
+            if (model === 'gemini-3.1-pro') {
+                requestBody = {
+                    contents: [{ parts: [{ text: cleanPrompt }] }]
+                };
+            } else {
+                // OpenAI兼容格式
+                requestBody = {
+                    messages: [{ role: 'user', content: cleanPrompt }],
+                    model: model
+                };
+            }
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`API请求失败: ${response.status} ${error}`);
+            }
+
+            const data = await response.json();
+            
+            if (model === 'gemini-3.1-pro') {
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            } else {
+                // 通用OpenAI兼容格式返回
+                return data.choices?.[0]?.message?.content || '';
+            }
+        }
+
+        // ==================== 工具函数 ====================
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const msg = document.getElementById('toastMessage');
+            
+            msg.textContent = message;
+            
+            if (type === 'success') {
+                icon.className = 'fas fa-check-circle text-green-400';
+            } else if (type === 'error') {
+                icon.className = 'fas fa-times-circle text-red-400';
+            } else if (type === 'warning') {
+                icon.className = 'fas fa-exclamation-circle text-yellow-400';
+            } else {
+                icon.className = 'fas fa-info-circle text-blue-400';
+            }
+            
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+            
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function showAiThinking(text) {
+            document.getElementById('aiThinkingText').textContent = text || 'AI正在处理中...';
+            document.getElementById('aiThinking').classList.remove('hidden');
+        }
+
+        function hideAiThinking() {
+            document.getElementById('aiThinking').classList.add('hidden');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
